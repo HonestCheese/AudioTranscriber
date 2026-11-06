@@ -25,7 +25,7 @@ fun TranscriptScreen(
     var names by remember(transcript.id) { mutableStateOf(transcript.speakerNames) }
     var editing by remember { mutableIntStateOf(-1) }
     var editedName by remember { mutableStateOf("") }
-    var expanded by remember(transcript.id) { mutableStateOf(false) }
+    var expanded by remember(transcript.id) { mutableStateOf(true) }
     val speakers = transcript.segments.map { it.speakerId }.filter { it >= 0 }.distinct().sorted()
 
     if (editing >= 0) AlertDialog(
