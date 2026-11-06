@@ -13,6 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
@@ -20,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -216,34 +220,69 @@ fun AudioTranscriberApp() {
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppBackground) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            Surface(color = AppSurface) {
-                Column {
-                    Text(
-                        "AUDIOTRANSCRIBER",
-                        modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 10.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = AppAccent
-                    )
-                    TabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        containerColor = AppSurface,
-                        contentColor = AppAccent
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            "AudioTranscriber",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = AppText
+                        )
+                        Text(
+                            "Локальная расшифровка аудио",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AppTextMuted
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = AppAccentSoft
                     ) {
-                        Tab(
-                            selected = pagerState.currentPage == 0,
-                            onClick = { navigateTo(0) },
-                            text = { Text("Обработка") }
+                        Text(
+                            "A",
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = AppAccent
                         )
-                        Tab(
-                            selected = pagerState.currentPage == 1,
-                            onClick = { navigateTo(1) },
-                            text = { Text("Аудио") }
-                        )
-                        Tab(
-                            selected = pagerState.currentPage == 2,
-                            onClick = { navigateTo(2) },
-                            text = { Text("Записи") }
-                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = AppSurface
+                ) {
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf("Обработка", "Аудио", "Записи").forEachIndexed { index, label ->
+                            val selected = pagerState.currentPage == index
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (selected) AppCard else AppSurface)
+                                    .clickable { navigateTo(index) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (selected) AppText else AppTextMuted
+                                )
+                            }
+                        }
                     }
                 }
             }
