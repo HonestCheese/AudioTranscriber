@@ -141,36 +141,34 @@ fun WorkspaceScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Обработка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Готовые расшифровки. Нажмите, чтобы открыть результат на странице аудио.",
-            color = AppTextMuted,
-            style = MaterialTheme.typography.bodySmall
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Обработка", style = MaterialTheme.typography.headlineLarge)
+            Text(
+                "Ваши готовые расшифровки",
+                color = AppTextMuted,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
 
         if (transcripts.isEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = AppSurface),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppPanel {
                     Text("Пока нет расшифровок", style = MaterialTheme.typography.titleMedium)
                     Text("Откройте вкладку «Аудио», выберите запись и запустите обработку.", color = AppTextMuted)
                     Button(onClick = onGoToAudio, shape = RoundedCornerShape(10.dp)) {
                         Text("Перейти к аудио")
                     }
-                }
-            }
         } else {
-            Text(
-                "РАСШИФРОВКИ · ${transcripts.size}  |  Зажмите карточку для действий",
-                style = MaterialTheme.typography.labelMedium,
-                color = AppTextMuted
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppEyebrow("СОХРАНЕНО · ${transcripts.size}")
+                Text("Зажмите для действий", color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -194,13 +192,26 @@ fun WorkspaceScreen(
                                     onClick = { if (draggingId == null) onOpen(item) },
                                     onLongClick = { if (draggingId == null) menuId = item.id }
                                 ),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDragging) MaterialTheme.colorScheme.secondaryContainer else AppSurface
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (isDragging) MaterialTheme.colorScheme.secondaryContainer else AppCard,
+                            shadowElevation = 0.dp
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                                Modifier.fillMaxWidth().padding(start = 13.dp, end = 8.dp, top = 13.dp, bottom = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Surface(
+                                    shape = RoundedCornerShape(13.dp),
+                                    color = AppAccentSoft
+                                ) {
+                                    Text(
+                                        "▤",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                        color = AppAccent,
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
                                 Column(
                                     Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(5.dp)
