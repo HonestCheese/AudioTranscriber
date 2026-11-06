@@ -44,6 +44,27 @@ fun TranscriptScreen(
         Text("Расшифровка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(transcript.fileName, color = AppTextMuted)
         Text(if (transcript.engine == "legacy-demo") "Демонстрационная запись из прежней версии" else "Локальная расшифровка · время слов приблизительное", style = MaterialTheme.typography.labelSmall, color = AppAccent)
+        transcript.processingTimings?.let { timings ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = AppSurface)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("ВРЕМЯ ОБРАБОТКИ", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Всего", fontWeight = FontWeight.SemiBold)
+                        Text(formatElapsed(timings.totalMs), color = AppAccent, fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    TimingRow("Подготовка аудио", timings.audioDecodeMs)
+                    TimingRow("Mel-признаки", timings.melFeaturesMs)
+                    TimingRow("GigaAM · распознавание", timings.gigaamMs)
+                    TimingRow("Pyannote + Titanet", timings.diarizationMs)
+                    TimingRow("Объединение реплик", timings.mergeMs)
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             speakers.forEach { speaker ->
                 OutlinedButton(onClick = {
@@ -75,3 +96,15 @@ fun TranscriptScreen(
         }
     }
 }
+
+
+@Composable
+private fun TimingRow(label: String, milliseconds: Long) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+        Text(formatElapsed(milliseconds), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+private fun formatElapsed(milliseconds: Long): String =
+    if (milliseconds < 1000L) "${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)
