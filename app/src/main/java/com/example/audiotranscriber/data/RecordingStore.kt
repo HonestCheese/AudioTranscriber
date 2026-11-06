@@ -43,8 +43,8 @@ class RecordingStore(private val context: Context) {
         val id = System.currentTimeMillis()
         val extension = originalName.substringAfterLast('.', "m4a").lowercase()
             .takeIf { it in setOf("m4a", "mp3", "wav", "ogg", "flac", "aac", "mp4", "opus") } ?: "audio"
-        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(id))
-        val displayName = "$timestamp.$extension"
+        val timestamp = SimpleDateFormat("yy-MM-dd HH:mm", Locale.US).format(Date(id))
+        val displayName = timestamp
         val target = File(folder, "audio_${id}_${System.nanoTime()}.$extension")
         try {
             context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
