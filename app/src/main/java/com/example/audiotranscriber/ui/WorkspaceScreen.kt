@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.withFrameNanos
 import com.example.audiotranscriber.data.SavedTranscript
-import java.text.DateFormat
 import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -208,7 +207,7 @@ fun WorkspaceScreen(
                                 ) {
                                     Text(item.fileName, fontWeight = FontWeight.SemiBold, maxLines = 2)
                                     Text(
-                                        "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.id))} · ${item.segments.size} реплик",
+                                        "${item.segments.size} реплик",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = AppTextMuted
                                     )
