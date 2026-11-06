@@ -65,7 +65,6 @@ fun AudioTranscriberApp() {
     val context = LocalContext.current
     val ml: TranscriptionViewModel = viewModel()
     val processing by ml.state.collectAsState()
-    var speakerCount by remember { mutableIntStateOf(2) }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) ml.installModels(uris)
     }
@@ -131,7 +130,7 @@ fun AudioTranscriberApp() {
             player.load(uri)
             duration = player.duration
             playerReady = true
-        } catch (e: Exception) { status = "Ошибка загрузки аудио: ${e.message}" }
+        } catch (e: Exception) { status = "Ошибка загрузки аудио: \${e.message}" }
     }
 
     fun startRecording() {
@@ -144,7 +143,7 @@ fun AudioTranscriberApp() {
             recordingSeconds = 0
             isRecording = true
             status = "Идёт запись..."
-        } catch (e: Exception) { status = "Ошибка записи: ${e.message}" }
+        } catch (e: Exception) { status = "Ошибка записи: \${e.message}" }
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startRecording() else status = "Нет разрешения на микрофон"
@@ -165,7 +164,23 @@ fun AudioTranscriberApp() {
                 audioUri = recordingStore.uri(saved)
                 fileName = saved.name
                 status = "Аудиофайл сохранён в приложении"
-            } catch (e: Exception) { status = "Ошибка импорта: ${e.message}" }
+            } catch (e: Exception) { status = "Ошибка импорта: \${e.message}" }
+        }
+    }
+    val jsonExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val transcript = currentTranscript
+        if (uri != null && transcript != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(store.exportJson(transcript))
+                } ?: error("Не удалось создать JSON-файл")
+            }.onSuccess {
+                status = "JSON экспортирован"
+            }.onFailure {
+                status = "Ошибка экспорта JSON: \${it.message}"
+            }
         }
     }
 
@@ -201,6 +216,7 @@ fun AudioTranscriberApp() {
                     history = store.loadAll()
                     currentTranscript = updated
                 },
+                onExport = { jsonExportLauncher.launch("\${opened.fileName}.json") },
                 onSegmentClick = { time ->
                     // Восстанавливаем файл, если доступен. Для удалённого исходника реплики остаются сохранены.
                     val savedUri = runCatching { Uri.parse(opened.audioUri) }.getOrNull()
@@ -274,7 +290,6 @@ fun AudioTranscriberApp() {
                 status = if (processing.busy || processing.message.isNotBlank()) processing.message else status,
                 hasAudio = audioUri != null, isProcessing = processing.busy, modelsReady = processing.modelsReady,
                 onInstallModels = { modelPicker.launch(arrayOf("*/*")) }, onCancel = ml::cancel,
-                speakerCount = speakerCount, onSpeakerCount = { speakerCount = it },
                 onRecord = {
                     if (isRecording) {
                         try {
@@ -286,7 +301,7 @@ fun AudioTranscriberApp() {
                             audioUri = recordingStore.uri(saved)
                             fileName = saved.name
                             status = "Запись сохранена"
-                        } catch (e: Exception) { status = "Ошибка сохранения: ${e.message}" }
+                        } catch (e: Exception) { status = "Ошибка сохранения: \${e.message}" }
                         finally { isRecording = false }
                     } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         startRecording()
@@ -305,7 +320,7 @@ fun AudioTranscriberApp() {
                     val uri = audioUri
                     if (uri != null && !processing.busy) {
                         player.pause(); isPlaying = false
-                        ml.transcribe(uri, fileName, speakerCount)
+                        ml.transcribe(uri, fileName, -1)
                     }
                 }
             )
