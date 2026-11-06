@@ -61,7 +61,7 @@ fun TranscriptScreen(
                     onToggleExpanded = { expanded = false },
                     onEditSpeaker = { speaker ->
                         editing = speaker
-                        editedName = names[speaker] ?: "Участник \${speaker + 1}"
+                        editedName = names[speaker] ?: "Участник ${speaker + 1}"
                     }
                 )
             }
@@ -84,7 +84,7 @@ fun TranscriptScreen(
                 onToggleExpanded = { expanded = true },
                 onEditSpeaker = { speaker ->
                     editing = speaker
-                    editedName = names[speaker] ?: "Участник \${speaker + 1}"
+                    editedName = names[speaker] ?: "Участник ${speaker + 1}"
                 }
             )
             Card(
@@ -157,7 +157,7 @@ private fun TranscriptHeader(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text(names[speaker] ?: "Участник \${speaker + 1}", maxLines = 1)
+                        Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
                     }
                 }
             }
@@ -192,7 +192,7 @@ private fun TranscriptSegmentCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     names[segment.speakerId]
-                        ?: if (segment.speakerId < 0) "Не определён" else "Участник \${segment.speakerId + 1}",
+                        ?: if (segment.speakerId < 0) "Не определён" else "Участник ${segment.speakerId + 1}",
                     color = if (segment.speakerId % 2 == 0) AppAccent else MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -200,7 +200,7 @@ private fun TranscriptSegmentCard(
             }
             Text(segment.text)
             Text(
-                "\${formatAudioTime(segment.startMs)} – \${formatAudioTime(segment.endMs)} · нажмите для воспроизведения",
+                "${formatAudioTime(segment.startMs)} – ${formatAudioTime(segment.endMs)} · нажмите для воспроизведения",
                 style = MaterialTheme.typography.labelSmall,
                 color = AppTextMuted
             )
@@ -217,4 +217,4 @@ private fun TimingRow(label: String, milliseconds: Long) {
 }
 
 private fun formatElapsed(milliseconds: Long): String =
-    if (milliseconds < 1000L) "\${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)
+    if (milliseconds < 1000L) "${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)
