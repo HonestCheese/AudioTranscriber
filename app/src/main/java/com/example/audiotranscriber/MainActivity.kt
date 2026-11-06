@@ -411,7 +411,9 @@ fun AudioTranscriberApp() {
                             }
                         },
                         onSegmentClick = { time ->
-                            if (playerReady) {
+                            if (audioUri == null) {
+                                status = "Исходное аудио недоступно. Текст расшифровки сохранён."
+                            } else if (playerReady) {
                                 val target = time.coerceAtMost(duration)
                                 player.seekTo(target)
                                 position = target
