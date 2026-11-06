@@ -96,7 +96,7 @@ fun TranscriptScreen(
             ) { Text("Экспортировать JSON", style = MaterialTheme.typography.labelLarge) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Arrangement.Center) {
+            verticalAlignment = Alignment.CenterVertically) {
             Text("Реплики", style = MaterialTheme.typography.titleLarge)
             Surface(shape = RoundedCornerShape(50), color = AppAccentSoft) {
                 Text(
