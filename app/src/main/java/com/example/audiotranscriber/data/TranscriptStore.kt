@@ -58,9 +58,9 @@ class TranscriptStore(private val context: Context) {
                 .put("startMs", it.startMs).put("endMs", it.endMs).put("text", it.text))
         }
         root.put("segments", segments)
-        val temp = File(folder, "\${transcript.id}.tmp")
+        val temp = File(folder, "${transcript.id}.tmp")
         temp.writeText(root.toString())
-        val target = File(folder, "\${transcript.id}.json")
+        val target = File(folder, "${transcript.id}.json")
         if (!temp.renameTo(target)) {
             temp.copyTo(target, overwrite = true)
             temp.delete()
@@ -71,7 +71,7 @@ class TranscriptStore(private val context: Context) {
     fun exportJson(transcript: SavedTranscript): String {
         val items = JSONArray()
         transcript.segments.forEach { segment ->
-            val speakerId = if (segment.speakerId < 0) "speaker_unknown" else "speaker_\${segment.speakerId + 1}"
+            val speakerId = if (segment.speakerId < 0) "speaker_unknown" else "speaker_${segment.speakerId + 1}"
             items.put(JSONObject()
                 .put("speaker_id", speakerId)
                 .put("start_ms", segment.startMs)
