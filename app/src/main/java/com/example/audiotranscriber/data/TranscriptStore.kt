@@ -12,6 +12,7 @@ data class ProcessingTimings(
     val gigaamMs: Long,
     val diarizationMs: Long,
     val mergeMs: Long,
+    val saveMs: Long = 0L,
     val totalMs: Long
 )
 
@@ -45,6 +46,7 @@ class TranscriptStore(private val context: Context) {
                 .put("gigaamMs", timings.gigaamMs)
                 .put("diarizationMs", timings.diarizationMs)
                 .put("mergeMs", timings.mergeMs)
+                .put("saveMs", timings.saveMs)
                 .put("totalMs", timings.totalMs))
         }
         val names = JSONObject()
@@ -89,6 +91,7 @@ class TranscriptStore(private val context: Context) {
                 gigaamMs = it.optLong("gigaamMs"),
                 diarizationMs = it.optLong("diarizationMs"),
                 mergeMs = it.optLong("mergeMs"),
+                saveMs = it.optLong("saveMs"),
                 totalMs = it.optLong("totalMs")
             )
         }
