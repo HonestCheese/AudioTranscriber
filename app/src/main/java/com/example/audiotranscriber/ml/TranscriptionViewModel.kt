@@ -60,7 +60,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     if (it < 0) "Не определён" else "Участник ${it + 1}"
                 }
                 val id = System.currentTimeMillis()
-                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(id))
+                val timestamp = SimpleDateFormat("yy-MM-dd HH:mm", Locale.US).format(Date(id))
                 val transcriptName = "${timestamp}_transcript"
                 val initial = SavedTranscript(
                     id, transcriptName, uri.toString(), segments, names,
