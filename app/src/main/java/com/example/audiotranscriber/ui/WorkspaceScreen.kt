@@ -155,11 +155,21 @@ fun WorkspaceScreen(
 
         if (transcripts.isEmpty()) {
             AppPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Пока нет расшифровок", style = MaterialTheme.typography.titleMedium)
-                    Text("Откройте вкладку «Аудио», выберите запись и запустите обработку.", color = AppTextMuted)
-                    Button(onClick = onGoToAudio, shape = RoundedCornerShape(10.dp)) {
+                    Text(
+                        "Откройте вкладку «Аудио», выберите запись и запустите обработку.",
+                        color = AppTextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(
+                        onClick = onGoToAudio,
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
                         Text("Перейти к аудио")
                     }
+                }
+            }
         } else {
             Row(
                 Modifier.fillMaxWidth(),
