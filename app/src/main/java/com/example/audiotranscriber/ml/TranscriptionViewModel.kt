@@ -46,6 +46,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     fun transcribe(uri: Uri, fileName: String, speakerCount: Int) {
         if (mutableState.value.busy) return
         task = viewModelScope.launch {
+            val totalStarted = System.nanoTime()
             mutableState.value = mutableState.value.copy(busy = true, message = "Запуск обработки…", result = null)
             try {
                 val output = LocalTranscriber.transcribe(app, uri, speakerCount) { message ->
@@ -55,11 +56,22 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 val names = segments.map { it.speakerId }.distinct().associateWith {
                     if (it < 0) "Не определён" else "Участник ${it + 1}"
                 }
-                val saved = SavedTranscript(
-                    System.currentTimeMillis(), fileName, uri.toString(), segments, names,
+                val id = System.currentTimeMillis()
+                val initial = SavedTranscript(
+                    id, fileName, uri.toString(), segments, names,
                     processingTimings = output.timings
                 )
-                withContext(Dispatchers.IO) { TranscriptStore(app).save(saved) }
+                val store = TranscriptStore(app)
+                val saveStarted = System.nanoTime()
+                withContext(Dispatchers.IO) { store.save(initial) }
+                val saveMs = (System.nanoTime() - saveStarted) / 1_000_000L
+                val saved = initial.copy(
+                    processingTimings = output.timings.copy(
+                        saveMs = saveMs,
+                        totalMs = (System.nanoTime() - totalStarted) / 1_000_000L
+                    )
+                )
+                withContext(Dispatchers.IO) { store.save(saved) }
                 mutableState.value = mutableState.value.copy(message = "Расшифровка сохранена", result = saved)
             } catch (e: CancellationException) {
                 mutableState.value = mutableState.value.copy(message = "Обработка отменена")
