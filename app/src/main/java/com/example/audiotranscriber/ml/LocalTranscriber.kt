@@ -21,7 +21,7 @@ object LocalTranscriber {
 
     private fun elapsedMs(startedAt: Long): Long = ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(0L)
 
-    suspend fun transcribe(context: Context, uri: Uri, speakerCount: Int = 2, progress: suspend (String) -> Unit): TranscriptionOutput = withContext(Dispatchers.Default) {
+    suspend fun transcribe(context: Context, uri: Uri, speakerCount: Int = -1, progress: suspend (String) -> Unit): TranscriptionOutput = withContext(Dispatchers.Default) {
         val totalStarted = System.nanoTime()
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
         check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
