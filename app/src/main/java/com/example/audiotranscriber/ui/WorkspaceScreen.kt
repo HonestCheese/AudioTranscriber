@@ -3,6 +3,7 @@ package com.example.audiotranscriber.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,9 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.compose.runtime.withFrameNanos
 import com.example.audiotranscriber.data.SavedTranscript
 import java.text.DateFormat
 import java.util.Date
@@ -37,8 +40,68 @@ fun WorkspaceScreen(
     var deleting by remember { mutableStateOf<SavedTranscript?>(null) }
     var draggingId by remember { mutableStateOf<Long?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    var dropIndex by remember { mutableIntStateOf(-1) }
+    var dragPointerY by remember { mutableFloatStateOf(0f) }
     val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val latestItems by rememberUpdatedState(transcripts)
+    val latestOnMove by rememberUpdatedState(onMove)
+
+    // The dragged row changes its real list position as soon as its centre
+    // crosses another row's centre. The row it leaves is immediately filled.
+    fun updateDragPosition() {
+        val id = draggingId ?: return
+        val itemsNow = latestItems
+        val from = itemsNow.indexOfFirst { it.id == id }
+        if (from < 0) return
+
+        val visible = listState.layoutInfo.visibleItemsInfo
+        val dragged = visible.firstOrNull { it.key == id } ?: return
+        val draggedCenter = dragged.offset + dragged.size / 2f
+
+        val crossed = when {
+            dragPointerY > draggedCenter -> visible
+                .filter { it.key != id && it.index > from && dragPointerY >= it.offset + it.size / 2f }
+                .maxByOrNull { it.index }
+            dragPointerY < draggedCenter -> visible
+                .filter { it.key != id && it.index < from && dragPointerY <= it.offset + it.size / 2f }
+                .minByOrNull { it.index }
+            else -> null
+        }
+
+        if (crossed != null) {
+            val to = crossed.index
+            if (to != from) {
+                dragOffset = dragPointerY - crossed.offset - dragged.size / 2f
+                latestOnMove(itemsNow[from], to - from)
+                return
+            }
+        }
+        dragOffset = dragPointerY - dragged.offset - dragged.size / 2f
+    }
+
+    // Keep scrolling while the finger is near the top/bottom edge. Re-evaluate
+    // crossed row-centres after every scroll frame so long lists can be reordered.
+    LaunchedEffect(draggingId) {
+        if (draggingId != null) {
+            val edge = with(density) { 76.dp.toPx() }
+            while (draggingId != null) {
+                val height = listState.layoutInfo.viewportSize.height.toFloat()
+                val y = dragPointerY
+                val delta = when {
+                    y < edge -> -(((edge - y) / edge) * 22f).coerceIn(4f, 22f)
+                    y > height - edge -> (((y - (height - edge)) / edge) * 22f).coerceIn(4f, 22f)
+                    else -> 0f
+                }
+                if (delta != 0f) {
+                    listState.scrollBy(delta)
+                    withFrameNanos { }
+                    updateDragPosition()
+                } else {
+                    withFrameNanos { }
+                }
+            }
+        }
+    }
 
     renaming?.let { item ->
         AlertDialog(
@@ -83,8 +146,11 @@ fun WorkspaceScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Обработка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Готовые расшифровки. Нажмите, чтобы открыть результат на странице аудио.",
-            color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+        Text(
+            "Готовые расшифровки. Нажмите, чтобы открыть результат на странице аудио.",
+            color = AppTextMuted,
+            style = MaterialTheme.typography.bodySmall
+        )
 
         if (transcripts.isEmpty()) {
             Card(
@@ -101,8 +167,11 @@ fun WorkspaceScreen(
                 }
             }
         } else {
-            Text("РАСШИФРОВКИ · ${transcripts.size}  |  Зажмите карточку для действий",
-                style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
+            Text(
+                "РАСШИФРОВКИ · ${transcripts.size}  |  Зажмите карточку для действий",
+                style = MaterialTheme.typography.labelMedium,
+                color = AppTextMuted
+            )
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -118,6 +187,8 @@ fun WorkspaceScreen(
                                     if (isDragging) {
                                         translationY = dragOffset
                                         shadowElevation = 14f
+                                        scaleX = 1.02f
+                                        scaleY = 1.02f
                                     }
                                 }
                                 .combinedClickable(
@@ -149,34 +220,23 @@ fun WorkspaceScreen(
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = {
                                                     menuId = null
-                                                    draggingId = item.id
+                                                    val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == item.id }
+                                                    dragPointerY = info?.let { it.offset + it.size / 2f } ?: 0f
                                                     dragOffset = 0f
-                                                    dropIndex = transcripts.indexOfFirst { it.id == item.id }
+                                                    draggingId = item.id
                                                 },
                                                 onDragEnd = {
-                                                    val from = transcripts.indexOfFirst { it.id == item.id }
-                                                    val to = dropIndex
                                                     draggingId = null
                                                     dragOffset = 0f
-                                                    dropIndex = -1
-                                                    if (from >= 0 && to >= 0 && to != from) onMove(item, to - from)
                                                 },
                                                 onDragCancel = {
                                                     draggingId = null
                                                     dragOffset = 0f
-                                                    dropIndex = -1
                                                 },
                                                 onDrag = { change, amount ->
                                                     change.consume()
-                                                    dragOffset += amount.y
-                                                    val current = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == item.id }
-                                                    if (current != null) {
-                                                        val center = current.offset + current.size / 2f + dragOffset
-                                                        val hovered = listState.layoutInfo.visibleItemsInfo.firstOrNull { other ->
-                                                            center >= other.offset && center < other.offset + other.size
-                                                        }
-                                                        if (hovered != null) dropIndex = hovered.index
-                                                    }
+                                                    dragPointerY += amount.y
+                                                    updateDragPosition()
                                                 }
                                             )
                                         },
