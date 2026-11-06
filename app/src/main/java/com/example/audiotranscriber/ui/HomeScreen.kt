@@ -18,8 +18,7 @@ fun HomeScreen(
     playerReady: Boolean, isPlaying: Boolean, position: Int, duration: Int,
     status: String, hasAudio: Boolean, onRecord: () -> Unit, onImport: () -> Unit,
     onPlayPause: () -> Unit, onSeek: (Int) -> Unit, onTranscript: () -> Unit,
-    isProcessing: Boolean, modelsReady: Boolean, onInstallModels: () -> Unit, onCancel: () -> Unit,
-    speakerCount: Int, onSpeakerCount: (Int) -> Unit
+    isProcessing: Boolean, modelsReady: Boolean, onInstallModels: () -> Unit, onCancel: () -> Unit
 ) {
     var sliderPosition by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
@@ -74,13 +73,8 @@ fun HomeScreen(
             OutlinedButton(onClick = onInstallModels, enabled = !isProcessing && !isRecording,
                 modifier = Modifier.fillMaxWidth()) { Text("Установить модели") }
         }
-        Text("Количество говорящих", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(-1 to "Авто", 1 to "1", 2 to "2", 3 to "3", 4 to "4").forEach { (count, label) ->
-                FilterChip(selected = speakerCount == count, onClick = { onSpeakerCount(count) },
-                    enabled = !isProcessing, label = { Text(label) })
-            }
-        }
+        Text("Режим: автоматическое определение количества говорящих", color = AppTextMuted,
+            style = MaterialTheme.typography.bodySmall)
         if (status.isNotBlank()) Text(status, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
         if (isProcessing) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
