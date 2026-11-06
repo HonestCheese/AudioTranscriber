@@ -5,6 +5,9 @@ import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Owns local audio copies, display names and the user-defined list order. */
 data class SavedRecording(val id: Long, val name: String, val fileName: String)
@@ -36,15 +39,17 @@ class RecordingStore(private val context: Context) {
         return all
     }
 
-    fun add(uri: Uri, name: String): SavedRecording {
+    fun add(uri: Uri, originalName: String): SavedRecording {
         val id = System.currentTimeMillis()
-        val extension = name.substringAfterLast('.', "m4a").lowercase()
+        val extension = originalName.substringAfterLast('.', "m4a").lowercase()
             .takeIf { it in setOf("m4a", "mp3", "wav", "ogg", "flac", "aac", "mp4", "opus") } ?: "audio"
-        val target = File(folder, "audio_${id}_${System.nanoTime()}.$extension")
+        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(id))
+        val displayName = "$timestamp.$extension"
+        val target = File(folder, "audio_\${id}_\${System.nanoTime()}.$extension")
         try {
             context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
                 ?: error("Не удалось открыть аудиофайл")
-            val item = SavedRecording(id, name, target.name)
+            val item = SavedRecording(id, displayName, target.name)
             persist(listOf(item) + loadAll())
             return item
         } catch (e: Exception) {
