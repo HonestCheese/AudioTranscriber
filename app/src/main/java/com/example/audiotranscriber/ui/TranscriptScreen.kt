@@ -23,7 +23,7 @@ fun TranscriptScreen(
     var names by remember(transcript.id) { mutableStateOf(transcript.speakerNames) }
     var editing by remember { mutableIntStateOf(-1) }
     var editedName by remember { mutableStateOf("") }
-    val speakers = transcript.segments.map { it.speakerId }.distinct().sorted()
+    val speakers = transcript.segments.map { it.speakerId }.filter { it >= 0 }.distinct().sorted()
 
     if (editing >= 0) AlertDialog(
         onDismissRequest = { editing = -1 },
@@ -43,14 +43,35 @@ fun TranscriptScreen(
         TextButton(onClick = onBack) { Text("← К истории") }
         Text("Расшифровка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(transcript.fileName, color = AppTextMuted)
-        Text("ДЕМО · МОДЕЛЬ НЕ ПОДКЛЮЧЕНА", style = MaterialTheme.typography.labelSmall, color = AppAccent)
+        Text(if (transcript.engine == "legacy-demo") "Демонстрационная запись из прежней версии" else "Локальная расшифровка · время слов приблизительное", style = MaterialTheme.typography.labelSmall, color = AppAccent)
+        transcript.processingTimings?.let { timings ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = AppSurface)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("ВРЕМЯ ОБРАБОТКИ", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Всего", fontWeight = FontWeight.SemiBold)
+                        Text(formatElapsed(timings.totalMs), color = AppAccent, fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    TimingRow("Подготовка аудио", timings.audioDecodeMs)
+                    TimingRow("Mel-признаки", timings.melFeaturesMs)
+                    TimingRow("GigaAM · распознавание", timings.gigaamMs)
+                    TimingRow("Pyannote + Titanet", timings.diarizationMs)
+                    TimingRow("Объединение реплик", timings.mergeMs)
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             speakers.forEach { speaker ->
                 OutlinedButton(onClick = {
                     editing = speaker
-                    editedName = names[speaker] ?: "Участник ${speaker + 1}"
+                    editedName = names[speaker] ?: if (speaker < 0) "Не определён" else "Участник ${speaker + 1}"
                 }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
-                    Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
+                    Text(names[speaker] ?: if (speaker < 0) "Не определён" else "Участник ${speaker + 1}", maxLines = 1)
                 }
             }
         }
@@ -61,7 +82,7 @@ fun TranscriptScreen(
                     colors = CardDefaults.cardColors(containerColor = AppSurface)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(names[segment.speakerId] ?: "Участник ${segment.speakerId + 1}",
+                            Text(names[segment.speakerId] ?: if (segment.speakerId < 0) "Не определён" else "Участник ${segment.speakerId + 1}",
                                 color = if (segment.speakerId % 2 == 0) AppAccent else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold)
                             Text(formatAudioTime(segment.startMs), color = AppTextMuted)
@@ -75,3 +96,15 @@ fun TranscriptScreen(
         }
     }
 }
+
+
+@Composable
+private fun TimingRow(label: String, milliseconds: Long) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+        Text(formatElapsed(milliseconds), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+private fun formatElapsed(milliseconds: Long): String =
+    if (milliseconds < 1000L) "${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)

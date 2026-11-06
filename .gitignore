@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Offline model bundles stay on the developer computer / phone.
+*.onnx
+*.aar
+android_models.part*
+*_models.zip

@@ -17,7 +17,9 @@ fun HomeScreen(
     fileName: String, isRecording: Boolean, recordingSeconds: Long,
     playerReady: Boolean, isPlaying: Boolean, position: Int, duration: Int,
     status: String, hasAudio: Boolean, onRecord: () -> Unit, onImport: () -> Unit,
-    onPlayPause: () -> Unit, onSeek: (Int) -> Unit, onTranscript: () -> Unit
+    onPlayPause: () -> Unit, onSeek: (Int) -> Unit, onTranscript: () -> Unit,
+    isProcessing: Boolean, modelsReady: Boolean, onInstallModels: () -> Unit, onCancel: () -> Unit,
+    speakerCount: Int, onSpeakerCount: (Int) -> Unit
 ) {
     var sliderPosition by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
@@ -31,9 +33,9 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("ИСТОЧНИК", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
-                Button(onClick = onImport, enabled = !isRecording, modifier = Modifier.fillMaxWidth(),
+                Button(onClick = onImport, enabled = !isRecording && !isProcessing, modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)) { Text("Выбрать аудиофайл") }
-                OutlinedButton(onClick = onRecord, modifier = Modifier.fillMaxWidth(),
+                OutlinedButton(onClick = onRecord, enabled = !isProcessing, modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)) {
                     Text(if (isRecording) "■  Остановить запись" else "●  Начать запись")
@@ -67,12 +69,28 @@ fun HomeScreen(
                 } else if (!isRecording) Text("Здесь появится плеер", color = AppTextMuted)
             }
         }
+        if (!modelsReady) {
+            Text("Один раз установите модели из архива Colab или семи частей android_models.part01–07.", color = AppTextMuted)
+            OutlinedButton(onClick = onInstallModels, enabled = !isProcessing && !isRecording,
+                modifier = Modifier.fillMaxWidth()) { Text("Установить модели") }
+        }
+        Text("Количество говорящих", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(-1 to "Авто", 1 to "1", 2 to "2", 3 to "3", 4 to "4").forEach { (count, label) ->
+                FilterChip(selected = speakerCount == count, onClick = { onSpeakerCount(count) },
+                    enabled = !isProcessing, label = { Text(label) })
+            }
+        }
         if (status.isNotBlank()) Text(status, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
-        Button(onClick = onTranscript, enabled = hasAudio && !isRecording, modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(16.dp)) {
+        if (isProcessing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Отменить") }
+        }
+        Button(onClick = onTranscript, enabled = hasAudio && !isRecording && !isProcessing && modelsReady,
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(16.dp)) {
             Text("Создать расшифровку")
         }
-        Text("Пока используется тестовая расшифровка. Обработка полностью локальная.",
+        Text("GigaAM + Pyannote / Titanet. Аудио обрабатывается на телефоне без отправки на сервер. Оставьте приложение открытым до завершения.",
             style = MaterialTheme.typography.bodySmall, color = AppTextMuted)
     }
 }
