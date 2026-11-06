@@ -62,6 +62,7 @@ fun TranscriptScreen(
                     TimingRow("GigaAM · распознавание", timings.gigaamMs)
                     TimingRow("Pyannote + Titanet", timings.diarizationMs)
                     TimingRow("Объединение реплик", timings.mergeMs)
+                    TimingRow("Сохранение результата", timings.saveMs)
                 }
             }
         }
