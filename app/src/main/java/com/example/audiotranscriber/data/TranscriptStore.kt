@@ -6,13 +6,23 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+data class ProcessingTimings(
+    val audioDecodeMs: Long,
+    val melFeaturesMs: Long,
+    val gigaamMs: Long,
+    val diarizationMs: Long,
+    val mergeMs: Long,
+    val totalMs: Long
+)
+
 data class SavedTranscript(
     val id: Long,
     val fileName: String,
     val audioUri: String,
     val segments: List<TranscriptSegment>,
     val speakerNames: Map<Int, String>,
-    val engine: String = "gigaam-v3"
+    val engine: String = "gigaam-v3",
+    val processingTimings: ProcessingTimings? = null
 )
 
 class TranscriptStore(private val context: Context) {
@@ -28,6 +38,15 @@ class TranscriptStore(private val context: Context) {
             .put("fileName", transcript.fileName)
             .put("audioUri", transcript.audioUri)
             .put("engine", transcript.engine)
+        transcript.processingTimings?.let { timings ->
+            root.put("processingTimings", JSONObject()
+                .put("audioDecodeMs", timings.audioDecodeMs)
+                .put("melFeaturesMs", timings.melFeaturesMs)
+                .put("gigaamMs", timings.gigaamMs)
+                .put("diarizationMs", timings.diarizationMs)
+                .put("mergeMs", timings.mergeMs)
+                .put("totalMs", timings.totalMs))
+        }
         val names = JSONObject()
         transcript.speakerNames.forEach { (id, name) -> names.put(id.toString(), name) }
         root.put("speakerNames", names)
@@ -62,7 +81,18 @@ class TranscriptStore(private val context: Context) {
             TranscriptSegment(segment.getInt("speakerId"), segment.getInt("startMs"),
                 segment.getInt("endMs"), segment.getString("text"))
         }
+        val timingJson = json.optJSONObject("processingTimings")
+        val timings = timingJson?.let {
+            ProcessingTimings(
+                audioDecodeMs = it.optLong("audioDecodeMs"),
+                melFeaturesMs = it.optLong("melFeaturesMs"),
+                gigaamMs = it.optLong("gigaamMs"),
+                diarizationMs = it.optLong("diarizationMs"),
+                mergeMs = it.optLong("mergeMs"),
+                totalMs = it.optLong("totalMs")
+            )
+        }
         return SavedTranscript(json.getLong("id"), json.getString("fileName"),
-            json.optString("audioUri"), segments, names, json.optString("engine", "legacy-demo"))
+            json.optString("audioUri"), segments, names, json.optString("engine", "legacy-demo"), timings)
     }
 }
