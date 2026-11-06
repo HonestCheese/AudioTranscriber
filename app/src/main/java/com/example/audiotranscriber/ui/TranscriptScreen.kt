@@ -153,4 +153,3 @@ private fun TimingRow(label: String, milliseconds: Long) {
 
 private fun formatElapsed(milliseconds: Long): String =
     if (milliseconds < 1000L) "${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)
-}
