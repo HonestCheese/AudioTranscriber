@@ -28,10 +28,24 @@ data class SavedTranscript(
 
 class TranscriptStore(private val context: Context) {
     private val folder get() = File(context.filesDir, "transcripts").apply { mkdirs() }
+    private val orderFile get() = File(folder, "order.json")
 
-    fun loadAll(): List<SavedTranscript> = folder.listFiles { f -> f.extension == "json" }
-        ?.mapNotNull { file -> runCatching { decode(JSONObject(file.readText())) }.getOrNull() }
-        ?.sortedByDescending { it.id } ?: emptyList()
+    fun loadAll(): List<SavedTranscript> {
+        val all = folder.listFiles { f -> f.extension == "json" }
+            ?.mapNotNull { file -> runCatching { decode(JSONObject(file.readText())) }.getOrNull() }
+            .orEmpty()
+        if (all.isEmpty()) return emptyList()
+
+        val orderedIds = runCatching {
+            val array = JSONArray(orderFile.readText())
+            (0 until array.length()).map { array.getLong(it) }
+        }.getOrDefault(emptyList())
+
+        val byId = all.associateBy { it.id }
+        val ordered = orderedIds.mapNotNull { byId[it] }
+        val extras = all.filterNot { it.id in orderedIds }.sortedByDescending { it.id }
+        return extras + ordered
+    }
 
     fun save(transcript: SavedTranscript) {
         val root = JSONObject()
@@ -67,6 +81,27 @@ class TranscriptStore(private val context: Context) {
         }
     }
 
+    fun rename(id: Long, name: String) {
+        val clean = name.trim()
+        require(clean.isNotEmpty()) { "Имя не может быть пустым" }
+        val transcript = loadAll().firstOrNull { it.id == id } ?: return
+        save(transcript.copy(fileName = clean))
+    }
+
+    /** Move an item by a relative number of positions and persist the new order. */
+    fun move(id: Long, direction: Int) {
+        val items = loadAll().toMutableList()
+        val from = items.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val to = (from + direction).coerceIn(0, items.lastIndex)
+        if (to == from) return
+        val moved = items.removeAt(from)
+        items.add(to, moved)
+        val order = JSONArray()
+        items.forEach { order.put(it.id) }
+        orderFile.writeText(order.toString())
+    }
+
     /** Export the public interchange format requested by the project. */
     fun exportJson(transcript: SavedTranscript): String {
         val items = JSONArray()
@@ -81,7 +116,13 @@ class TranscriptStore(private val context: Context) {
         return JSONObject().put("transcript", items).toString(2)
     }
 
-    fun delete(id: Long) { File(folder, "$id.json").delete() }
+    fun delete(id: Long) {
+        File(folder, "$id.json").delete()
+        val remaining = loadAll()
+        val order = JSONArray()
+        remaining.forEach { order.put(it.id) }
+        orderFile.writeText(order.toString())
+    }
 
     private fun decode(json: JSONObject): SavedTranscript {
         val namesJson = json.optJSONObject("speakerNames") ?: JSONObject()
