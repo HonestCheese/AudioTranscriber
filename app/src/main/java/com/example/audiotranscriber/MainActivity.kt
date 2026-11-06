@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,7 +26,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.ui.graphics.toArgb
 import com.example.audiotranscriber.audio.AudioPlayer
 import com.example.audiotranscriber.audio.AudioRecorder
 import com.example.audiotranscriber.data.RecordingStore
@@ -73,6 +71,7 @@ fun AudioTranscriberApp() {
         if (processing.busy) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
+
     val recorder = remember { AudioRecorder(context) }
     val player = remember { AudioPlayer(context) }
     val store = remember { TranscriptStore(context) }
@@ -81,9 +80,11 @@ fun AudioTranscriberApp() {
     var selectedRecording by remember { mutableStateOf<SavedRecording?>(null) }
     var history by remember { mutableStateOf(store.loadAll()) }
     var currentTranscript by remember { mutableStateOf<SavedTranscript?>(null) }
+
     val pagerState = rememberPagerState(pageCount = { 3 }) // Обработка / Аудио / Записи
     val pageScope = rememberCoroutineScope()
     fun navigateTo(page: Int) { pageScope.launch { pagerState.animateScrollToPage(page) } }
+
     var audioUri by remember { mutableStateOf<Uri?>(null) }
     var fileName by remember { mutableStateOf("Файл не выбран") }
     var isRecording by remember { mutableStateOf(false) }
@@ -93,13 +94,15 @@ fun AudioTranscriberApp() {
     var playerReady by remember { mutableStateOf(false) }
     var duration by remember { mutableIntStateOf(0) }
     var position by remember { mutableIntStateOf(0) }
+    var pendingSeekMs by remember { mutableIntStateOf(-1) }
+    var playAfterPendingSeek by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
 
     LaunchedEffect(processing.result) {
         processing.result?.let { result ->
             history = store.loadAll()
             currentTranscript = result
-            navigateTo(0)
+            navigateTo(1)
             ml.consumeResult()
         }
     }
@@ -130,12 +133,29 @@ fun AudioTranscriberApp() {
             player.load(uri)
             duration = player.duration
             playerReady = true
-        } catch (e: Exception) { status = "Ошибка загрузки аудио: ${e.message}" }
+        } catch (e: Exception) {
+            status = "Ошибка загрузки аудио: ${e.message}"
+        }
+    }
+    LaunchedEffect(playerReady, pendingSeekMs) {
+        if (playerReady && pendingSeekMs >= 0) {
+            val target = pendingSeekMs.coerceAtMost(duration)
+            player.seekTo(target)
+            position = target
+            pendingSeekMs = -1
+            if (playAfterPendingSeek) {
+                player.play()
+                isPlaying = true
+            }
+            playAfterPendingSeek = false
+        }
     }
 
     fun startRecording() {
         if (processing.busy) return
         try {
+            currentTranscript = null
+            pendingSeekMs = -1
             player.pause()
             isPlaying = false
             recorder.start()
@@ -143,20 +163,27 @@ fun AudioTranscriberApp() {
             recordingSeconds = 0
             isRecording = true
             status = "Идёт запись..."
-        } catch (e: Exception) { status = "Ошибка записи: ${e.message}" }
+        } catch (e: Exception) {
+            status = "Ошибка записи: ${e.message}"
+        }
     }
+
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startRecording() else status = "Нет разрешения на микрофон"
     }
+
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            currentTranscript = null
+            pendingSeekMs = -1
             audioUri = uri
             fileName = "Выбран аудиофайл"
             context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) fileName = cursor.getString(0)
             }
-            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            catch (_: SecurityException) { }
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: SecurityException) { }
             try {
                 val saved = recordingStore.add(uri, fileName)
                 recordings = recordingStore.loadAll()
@@ -164,9 +191,12 @@ fun AudioTranscriberApp() {
                 audioUri = recordingStore.uri(saved)
                 fileName = saved.name
                 status = "Аудиофайл сохранён в приложении"
-            } catch (e: Exception) { status = "Ошибка импорта: ${e.message}" }
+            } catch (e: Exception) {
+                status = "Ошибка импорта: ${e.message}"
+            }
         }
     }
+
     val jsonExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -185,147 +215,220 @@ fun AudioTranscriberApp() {
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppBackground) {
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        Surface(color = AppSurface) {
-            Column {
-                Text("AUDIOTRANSCRIBER", modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 10.dp),
-                    style = MaterialTheme.typography.titleMedium, color = AppAccent)
-                TabRow(selectedTabIndex = pagerState.currentPage, containerColor = AppSurface, contentColor = AppAccent) {
-                    Tab(selected = pagerState.currentPage == 0, onClick = { currentTranscript = null; navigateTo(0) },
-                        text = { Text("Обработка") })
-                    Tab(selected = pagerState.currentPage == 1, onClick = { currentTranscript = null; navigateTo(1) },
-                        text = { Text("Аудио") })
-                    Tab(selected = pagerState.currentPage == 2, onClick = { currentTranscript = null; navigateTo(2) },
-                        text = { Text("Записи") })
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            Surface(color = AppSurface) {
+                Column {
+                    Text(
+                        "AUDIOTRANSCRIBER",
+                        modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 10.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = AppAccent
+                    )
+                    TabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = AppSurface,
+                        contentColor = AppAccent
+                    ) {
+                        Tab(
+                            selected = pagerState.currentPage == 0,
+                            onClick = { navigateTo(0) },
+                            text = { Text("Обработка") }
+                        )
+                        Tab(
+                            selected = pagerState.currentPage == 1,
+                            onClick = { navigateTo(1) },
+                            text = { Text("Аудио") }
+                        )
+                        Tab(
+                            selected = pagerState.currentPage == 2,
+                            onClick = { navigateTo(2) },
+                            text = { Text("Записи") }
+                        )
+                    }
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1
+            ) { page ->
+                when (page) {
+                    0 -> WorkspaceScreen(
+                        transcripts = history,
+                        onOpen = { item ->
+                            currentTranscript = item
+                            pendingSeekMs = -1
+                            val savedUri = item.audioUri.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+                            audioUri = savedUri
+                            val recording = recordings.firstOrNull {
+                                recordingStore.uri(it).toString() == item.audioUri
+                            }
+                            selectedRecording = recording
+                            fileName = recording?.name ?: if (savedUri == null) "Исходное аудио недоступно" else item.fileName
+                            status = if (savedUri == null) "Расшифровка открыта, исходное аудио недоступно" else "Расшифровка открыта"
+                            navigateTo(1)
+                        },
+                        onRename = { item, name ->
+                            store.rename(item.id, name)
+                            history = store.loadAll()
+                            if (currentTranscript?.id == item.id) {
+                                currentTranscript = history.firstOrNull { it.id == item.id }
+                            }
+                        },
+                        onMove = { item, direction ->
+                            store.move(item.id, direction)
+                            history = store.loadAll()
+                        },
+                        onDelete = { item ->
+                            store.delete(item.id)
+                            history = store.loadAll()
+                            if (currentTranscript?.id == item.id) currentTranscript = null
+                        },
+                        onGoToAudio = { navigateTo(1) }
+                    )
+
+                    2 -> RecordingsScreen(
+                        recordings = recordings,
+                        onOpen = { item ->
+                            if (processing.busy) return@RecordingsScreen
+                            selectedRecording = item
+                            audioUri = recordingStore.uri(item)
+                            currentTranscript = history.firstOrNull {
+                                it.audioUri == recordingStore.uri(item).toString()
+                            }
+                            pendingSeekMs = -1
+                            fileName = item.name
+                            status = "Запись открыта"
+                            navigateTo(1)
+                        },
+                        onRename = { item, name ->
+                            recordingStore.rename(item.id, name)
+                            recordings = recordingStore.loadAll()
+                            if (selectedRecording?.id == item.id) {
+                                selectedRecording = recordings.firstOrNull { it.id == item.id }
+                                fileName = name.trim()
+                            }
+                        },
+                        onMove = { item, direction ->
+                            recordingStore.move(item.id, direction)
+                            recordings = recordingStore.loadAll()
+                        },
+                        onDelete = { item ->
+                            if (processing.busy) return@RecordingsScreen
+                            if (selectedRecording?.id == item.id) {
+                                player.pause()
+                                isPlaying = false
+                                audioUri = null
+                                selectedRecording = null
+                                currentTranscript = null
+                                fileName = "Файл не выбран"
+                            }
+                            recordingStore.delete(item.id)
+                            recordings = recordingStore.loadAll()
+                        },
+                        onGoToAudio = { navigateTo(1) }
+                    )
+
+                    else -> HomeScreen(
+                        fileName = fileName,
+                        isRecording = isRecording,
+                        recordingSeconds = recordingSeconds,
+                        playerReady = playerReady,
+                        isPlaying = isPlaying,
+                        position = position,
+                        duration = duration,
+                        status = if (processing.busy || processing.message.isNotBlank()) processing.message else status,
+                        hasAudio = audioUri != null,
+                        isProcessing = processing.busy,
+                        modelsReady = processing.modelsReady,
+                        onInstallModels = { modelPicker.launch(arrayOf("*/*")) },
+                        onCancel = ml::cancel,
+                        onRecord = {
+                            if (isRecording) {
+                                try {
+                                    val file = recorder.stop()
+                                    val saved = recordingStore.add(Uri.fromFile(file), file.name)
+                                    file.delete()
+                                    recordings = recordingStore.loadAll()
+                                    selectedRecording = saved
+                                    currentTranscript = null
+                                    audioUri = recordingStore.uri(saved)
+                                    fileName = saved.name
+                                    status = "Запись сохранена"
+                                } catch (e: Exception) {
+                                    status = "Ошибка сохранения: ${e.message}"
+                                } finally {
+                                    isRecording = false
+                                }
+                            } else if (ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startRecording()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        onImport = { audioPicker.launch(arrayOf("audio/*")) },
+                        onPlayPause = {
+                            if (isPlaying) {
+                                player.pause()
+                                isPlaying = false
+                            } else if (playerReady) {
+                                if (position >= duration) {
+                                    player.seekTo(0)
+                                    position = 0
+                                }
+                                player.play()
+                                isPlaying = true
+                            }
+                        },
+                        onSeek = { time ->
+                            if (playerReady) {
+                                player.seekTo(time)
+                                position = time
+                            }
+                        },
+                        onTranscript = {
+                            val uri = audioUri
+                            if (uri != null && !processing.busy) {
+                                player.pause()
+                                isPlaying = false
+                                currentTranscript = null
+                                ml.transcribe(uri, fileName, -1)
+                            }
+                        },
+                        transcript = currentTranscript,
+                        onSaveNames = { names ->
+                            val opened = currentTranscript
+                            if (opened != null) {
+                                val updated = opened.copy(speakerNames = names)
+                                store.save(updated)
+                                history = store.loadAll()
+                                currentTranscript = updated
+                            }
+                        },
+                        onSegmentClick = { time ->
+                            if (playerReady) {
+                                val target = time.coerceAtMost(duration)
+                                player.seekTo(target)
+                                position = target
+                                player.play()
+                                isPlaying = true
+                            } else {
+                                pendingSeekMs = time
+                                playAfterPendingSeek = true
+                                status = "Аудио загружается. Реплика начнёт воспроизводиться автоматически."
+                            }
+                        },
+                        onExport = {
+                            currentTranscript?.let { jsonExportLauncher.launch("${it.fileName}.json") }
+                        }
+                    )
                 }
             }
         }
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1
-        ) { page ->
-        val opened = currentTranscript
-        if (opened != null && page == 0) {
-            TranscriptScreen(
-                transcript = opened,
-                onBack = { currentTranscript = null },
-                onSaveNames = { names ->
-                    val updated = opened.copy(speakerNames = names)
-                    store.save(updated)
-                    history = store.loadAll()
-                    currentTranscript = updated
-                },
-                onExport = { jsonExportLauncher.launch("${opened.fileName}.json") },
-                onSegmentClick = { time ->
-                    // Восстанавливаем файл, если доступен. Для удалённого исходника реплики остаются сохранены.
-                    val savedUri = runCatching { Uri.parse(opened.audioUri) }.getOrNull()
-                    if (savedUri != null && opened.audioUri.isNotBlank()) {
-                        if (audioUri == savedUri && playerReady) {
-                            player.seekTo(time.coerceAtMost(duration))
-                            position = time.coerceAtMost(duration)
-                            player.play()
-                            isPlaying = true
-                        } else {
-                            audioUri = savedUri
-                            position = time
-                            status = "Аудио загружается. Нажмите воспроизведение."
-                        }
-                        fileName = opened.fileName
-                        navigateTo(1)
-                        currentTranscript = null
-                    } else {
-                        status = "Исходное аудио недоступно"
-                    }
-                }
-            )
-        } else if (page == 0) {
-            WorkspaceScreen(
-                transcripts = history,
-                onOpen = { currentTranscript = it },
-                onDelete = { store.delete(it.id); history = store.loadAll() },
-                onGoToAudio = { navigateTo(1) }
-            )
-        } else if (page == 2) {
-            RecordingsScreen(
-                recordings = recordings,
-                onOpen = { item ->
-                    if (processing.busy) return@RecordingsScreen
-                    selectedRecording = item
-                    audioUri = recordingStore.uri(item)
-                    fileName = item.name
-                    status = "Запись открыта"
-                    navigateTo(1)
-                },
-                onRename = { item, name ->
-                    recordingStore.rename(item.id, name)
-                    recordings = recordingStore.loadAll()
-                    if (selectedRecording?.id == item.id) {
-                        selectedRecording = recordings.firstOrNull { it.id == item.id }
-                        fileName = name.trim()
-                    }
-                },
-                onMove = { item, direction ->
-                    recordingStore.move(item.id, direction)
-                    recordings = recordingStore.loadAll()
-                },
-                onDelete = { item ->
-                    if (processing.busy) return@RecordingsScreen
-                    if (selectedRecording?.id == item.id) {
-                        player.pause()
-                        isPlaying = false
-                        audioUri = null
-                        selectedRecording = null
-                        fileName = "Файл не выбран"
-                    }
-                    recordingStore.delete(item.id)
-                    recordings = recordingStore.loadAll()
-                },
-                onGoToAudio = { navigateTo(1) }
-            )
-        } else {
-            HomeScreen(
-                fileName = fileName, isRecording = isRecording, recordingSeconds = recordingSeconds,
-                playerReady = playerReady, isPlaying = isPlaying, position = position, duration = duration,
-                status = if (processing.busy || processing.message.isNotBlank()) processing.message else status,
-                hasAudio = audioUri != null, isProcessing = processing.busy, modelsReady = processing.modelsReady,
-                onInstallModels = { modelPicker.launch(arrayOf("*/*")) }, onCancel = ml::cancel,
-                onRecord = {
-                    if (isRecording) {
-                        try {
-                            val file = recorder.stop()
-                            val saved = recordingStore.add(Uri.fromFile(file), file.name)
-                            file.delete()
-                            recordings = recordingStore.loadAll()
-                            selectedRecording = saved
-                            audioUri = recordingStore.uri(saved)
-                            fileName = saved.name
-                            status = "Запись сохранена"
-                        } catch (e: Exception) { status = "Ошибка сохранения: ${e.message}" }
-                        finally { isRecording = false }
-                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                        startRecording()
-                    } else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                },
-                onImport = { audioPicker.launch(arrayOf("audio/*")) },
-                onPlayPause = {
-                    if (isPlaying) { player.pause(); isPlaying = false }
-                    else if (playerReady) {
-                        if (position >= duration) { player.seekTo(0); position = 0 }
-                        player.play(); isPlaying = true
-                    }
-                },
-                onSeek = { time -> if (playerReady) { player.seekTo(time); position = time } },
-                onTranscript = {
-                    val uri = audioUri
-                    if (uri != null && !processing.busy) {
-                        player.pause(); isPlaying = false
-                        ml.transcribe(uri, fileName, -1)
-                    }
-                }
-            )
-        }
-        } // HorizontalPager
-    }
     }
 }
