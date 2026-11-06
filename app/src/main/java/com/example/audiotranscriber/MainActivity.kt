@@ -34,7 +34,9 @@ import com.example.audiotranscriber.data.RecordingStore
 import com.example.audiotranscriber.data.SavedRecording
 import com.example.audiotranscriber.data.SavedTranscript
 import com.example.audiotranscriber.data.TranscriptStore
-import com.example.audiotranscriber.model.demoTranscript
+import com.example.audiotranscriber.ml.TranscriptionViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import android.view.WindowManager
 import com.example.audiotranscriber.ui.*
 import kotlinx.coroutines.delay
 
@@ -61,6 +63,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AudioTranscriberApp() {
     val context = LocalContext.current
+    val ml: TranscriptionViewModel = viewModel()
+    val processing by ml.state.collectAsState()
+    var speakerCount by remember { mutableIntStateOf(2) }
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) ml.installModels(uris)
+    }
+    DisposableEffect(processing.busy) {
+        val window = (context as? ComponentActivity)?.window
+        if (processing.busy) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
     val recorder = remember { AudioRecorder(context) }
     val player = remember { AudioPlayer(context) }
     val store = remember { TranscriptStore(context) }
@@ -82,6 +95,15 @@ fun AudioTranscriberApp() {
     var duration by remember { mutableIntStateOf(0) }
     var position by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("") }
+
+    LaunchedEffect(processing.result) {
+        processing.result?.let { result ->
+            history = store.loadAll()
+            currentTranscript = result
+            navigateTo(0)
+            ml.consumeResult()
+        }
+    }
 
     DisposableEffect(recorder, player) {
         player.onCompletion = { isPlaying = false; position = player.duration }
@@ -113,6 +135,7 @@ fun AudioTranscriberApp() {
     }
 
     fun startRecording() {
+        if (processing.busy) return
         try {
             player.pause()
             isPlaying = false
@@ -211,6 +234,7 @@ fun AudioTranscriberApp() {
             RecordingsScreen(
                 recordings = recordings,
                 onOpen = { item ->
+                    if (processing.busy) return@RecordingsScreen
                     selectedRecording = item
                     audioUri = recordingStore.uri(item)
                     fileName = item.name
@@ -230,6 +254,7 @@ fun AudioTranscriberApp() {
                     recordings = recordingStore.loadAll()
                 },
                 onDelete = { item ->
+                    if (processing.busy) return@RecordingsScreen
                     if (selectedRecording?.id == item.id) {
                         player.pause()
                         isPlaying = false
@@ -246,7 +271,10 @@ fun AudioTranscriberApp() {
             HomeScreen(
                 fileName = fileName, isRecording = isRecording, recordingSeconds = recordingSeconds,
                 playerReady = playerReady, isPlaying = isPlaying, position = position, duration = duration,
-                status = status, hasAudio = audioUri != null,
+                status = if (processing.busy || processing.message.isNotBlank()) processing.message else status,
+                hasAudio = audioUri != null, isProcessing = processing.busy, modelsReady = processing.modelsReady,
+                onInstallModels = { modelPicker.launch(arrayOf("*/*")) }, onCancel = ml::cancel,
+                speakerCount = speakerCount, onSpeakerCount = { speakerCount = it },
                 onRecord = {
                     if (isRecording) {
                         try {
@@ -274,16 +302,11 @@ fun AudioTranscriberApp() {
                 },
                 onSeek = { time -> if (playerReady) { player.seekTo(time); position = time } },
                 onTranscript = {
-                    player.pause(); isPlaying = false
-                    val item = SavedTranscript(System.currentTimeMillis(), fileName,
-                        audioUri?.toString().orEmpty(), demoTranscript.toList(),
-                        mapOf(0 to "Участник 1", 1 to "Участник 2"))
-                    try {
-                        store.save(item)
-                        history = store.loadAll()
-                        currentTranscript = item
-                        navigateTo(0)
-                    } catch (e: Exception) { status = "Ошибка сохранения расшифровки: ${e.message}" }
+                    val uri = audioUri
+                    if (uri != null && !processing.busy) {
+                        player.pause(); isPlaying = false
+                        ml.transcribe(uri, fileName, speakerCount)
+                    }
                 }
             )
         }

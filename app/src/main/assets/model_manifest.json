@@ -1,0 +1,22 @@
+{
+  "diarization/segmentation.onnx": {
+    "size": 5992913,
+    "sha256": "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079"
+  },
+  "diarization/titanet.onnx": {
+    "size": 40257283,
+    "sha256": "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e"
+  },
+  "gigaam/v3_e2e_rnnt_decoder.onnx": {
+    "size": 4599971,
+    "sha256": "92fe0b398e1725297ffdf20c646b8d7be4ef8c4fbdf0438c6138a5baac60304a"
+  },
+  "gigaam/v3_e2e_rnnt_encoder.onnx": {
+    "size": 885093327,
+    "sha256": "27c33937b4965a3e26e4fb37a264b14d1938c6e1a0c8cb134a7cde491f420080"
+  },
+  "gigaam/v3_e2e_rnnt_joint.onnx": {
+    "size": 2712927,
+    "sha256": "655d009741528c5f03d887ecaeb2fcb11a2ba7643f76534338ffd1014eea3c0a"
+  }
+}

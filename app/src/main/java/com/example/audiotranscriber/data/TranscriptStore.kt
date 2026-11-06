@@ -11,7 +11,8 @@ data class SavedTranscript(
     val fileName: String,
     val audioUri: String,
     val segments: List<TranscriptSegment>,
-    val speakerNames: Map<Int, String>
+    val speakerNames: Map<Int, String>,
+    val engine: String = "gigaam-v3"
 )
 
 class TranscriptStore(private val context: Context) {
@@ -26,6 +27,7 @@ class TranscriptStore(private val context: Context) {
             .put("id", transcript.id)
             .put("fileName", transcript.fileName)
             .put("audioUri", transcript.audioUri)
+            .put("engine", transcript.engine)
         val names = JSONObject()
         transcript.speakerNames.forEach { (id, name) -> names.put(id.toString(), name) }
         root.put("speakerNames", names)
@@ -61,6 +63,6 @@ class TranscriptStore(private val context: Context) {
                 segment.getInt("endMs"), segment.getString("text"))
         }
         return SavedTranscript(json.getLong("id"), json.getString("fileName"),
-            json.optString("audioUri"), segments, names)
+            json.optString("audioUri"), segments, names, json.optString("engine", "legacy-demo"))
     }
 }

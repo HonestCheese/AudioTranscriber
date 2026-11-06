@@ -23,7 +23,7 @@ fun TranscriptScreen(
     var names by remember(transcript.id) { mutableStateOf(transcript.speakerNames) }
     var editing by remember { mutableIntStateOf(-1) }
     var editedName by remember { mutableStateOf("") }
-    val speakers = transcript.segments.map { it.speakerId }.distinct().sorted()
+    val speakers = transcript.segments.map { it.speakerId }.filter { it >= 0 }.distinct().sorted()
 
     if (editing >= 0) AlertDialog(
         onDismissRequest = { editing = -1 },
@@ -43,14 +43,14 @@ fun TranscriptScreen(
         TextButton(onClick = onBack) { Text("← К истории") }
         Text("Расшифровка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(transcript.fileName, color = AppTextMuted)
-        Text("ДЕМО · МОДЕЛЬ НЕ ПОДКЛЮЧЕНА", style = MaterialTheme.typography.labelSmall, color = AppAccent)
+        Text(if (transcript.engine == "legacy-demo") "Демонстрационная запись из прежней версии" else "Локальная расшифровка · время слов приблизительное", style = MaterialTheme.typography.labelSmall, color = AppAccent)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             speakers.forEach { speaker ->
                 OutlinedButton(onClick = {
                     editing = speaker
-                    editedName = names[speaker] ?: "Участник ${speaker + 1}"
+                    editedName = names[speaker] ?: if (speaker < 0) "Не определён" else "Участник ${speaker + 1}"
                 }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
-                    Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
+                    Text(names[speaker] ?: if (speaker < 0) "Не определён" else "Участник ${speaker + 1}", maxLines = 1)
                 }
             }
         }
@@ -61,7 +61,7 @@ fun TranscriptScreen(
                     colors = CardDefaults.cardColors(containerColor = AppSurface)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(names[segment.speakerId] ?: "Участник ${segment.speakerId + 1}",
+                            Text(names[segment.speakerId] ?: if (segment.speakerId < 0) "Не определён" else "Участник ${segment.speakerId + 1}",
                                 color = if (segment.speakerId % 2 == 0) AppAccent else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold)
                             Text(formatAudioTime(segment.startMs), color = AppTextMuted)

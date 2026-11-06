@@ -1,0 +1,125 @@
+{
+  "model": "v3_e2e_rnnt",
+  "gigaam_revision": "7447938d791c4f3e643386ee22c33777004293a5",
+  "torch_version": "2.11.0+cpu",
+  "sample_rate": 16000,
+  "channels": 1,
+  "blank_id": 1024,
+  "max_symbols_per_step": 10,
+  "diarization": {
+    "num_clusters": 2,
+    "threshold": 0.5,
+    "window_shift_ratio": 0.1,
+    "min_duration_on": 0.3,
+    "min_duration_off": 0.5
+  },
+  "merge_max_pause_seconds": 1.0,
+  "onnx_schemas": {
+    "diarization/segmentation.onnx": {
+      "inputs": [
+        {
+          "name": "x",
+          "type": "FLOAT, Nx1xT"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "type": "FLOAT, Nxfloor(floor(floor(floor(T/10 - 251/10)/3 - 2/3)/3)/3 - 8/3) + 1x7"
+        }
+      ]
+    },
+    "diarization/titanet.onnx": {
+      "inputs": [
+        {
+          "name": "audio_signal",
+          "type": "FLOAT, audio_signal_dynamic_axes_1x80xaudio_signal_dynamic_axes_2"
+        },
+        {
+          "name": "length",
+          "type": "INT64, length_dynamic_axes_1"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "logits",
+          "type": "FLOAT, MatMullogits_dim_0x16681"
+        },
+        {
+          "name": "embs",
+          "type": "FLOAT, Squeezeembs_dim_0x192"
+        }
+      ]
+    },
+    "gigaam/v3_e2e_rnnt_decoder.onnx": {
+      "inputs": [
+        {
+          "name": "x",
+          "type": "INT64, batch_sizex1"
+        },
+        {
+          "name": "hi",
+          "type": "FLOAT, 1xbatch_sizex320"
+        },
+        {
+          "name": "ci",
+          "type": "FLOAT, 1xbatch_sizex320"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "dec",
+          "type": "FLOAT, batch_sizex1x320"
+        },
+        {
+          "name": "ho",
+          "type": "FLOAT, 1xbatch_sizex320"
+        },
+        {
+          "name": "co",
+          "type": "FLOAT, 1xbatch_sizex320"
+        }
+      ]
+    },
+    "gigaam/v3_e2e_rnnt_encoder.onnx": {
+      "inputs": [
+        {
+          "name": "audio_signal",
+          "type": "FLOAT, batch_sizex64xseq_len"
+        },
+        {
+          "name": "length",
+          "type": "INT64, batch_size"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "encoded",
+          "type": "FLOAT, batch_sizex768xseq_len"
+        },
+        {
+          "name": "encoded_len",
+          "type": "INT32, batch_size"
+        }
+      ]
+    },
+    "gigaam/v3_e2e_rnnt_joint.onnx": {
+      "inputs": [
+        {
+          "name": "enc",
+          "type": "FLOAT, batch_sizex768x1"
+        },
+        {
+          "name": "dec",
+          "type": "FLOAT, batch_sizex320x1"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "joint",
+          "type": "FLOAT, batch_sizex1x1x1025"
+        }
+      ]
+    }
+  }
+}
