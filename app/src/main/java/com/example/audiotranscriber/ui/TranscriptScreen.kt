@@ -47,8 +47,10 @@ fun TranscriptScreen(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Расшифровка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(transcript.fileName, color = AppTextMuted)
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Расшифровка", style = MaterialTheme.typography.headlineLarge)
+            Text(transcript.fileName, color = AppTextMuted, style = MaterialTheme.typography.bodyMedium)
+        }
         Text(
             if (transcript.engine == "legacy-demo") "Демонстрационная запись из прежней версии"
             else "Локальная расшифровка · время слов приблизительное",
@@ -56,12 +58,7 @@ fun TranscriptScreen(
             color = AppAccent
         )
         transcript.processingTimings?.let { timings ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AppSurface)
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            AppPanel {
                     Text("ВРЕМЯ ОБРАБОТКИ", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Всего", fontWeight = FontWeight.SemiBold)
@@ -74,34 +71,42 @@ fun TranscriptScreen(
                     TimingRow("Pyannote + Titanet", timings.diarizationMs)
                     TimingRow("Объединение реплик", timings.mergeMs)
                     TimingRow("Сохранение результата", timings.saveMs)
-                }
             }
         }
         if (speakers.isNotEmpty()) {
-            Text("УЧАСТНИКИ · нажмите, чтобы изменить имя", color = AppTextMuted,
-                style = MaterialTheme.typography.labelMedium)
+            AppEyebrow("УЧАСТНИКИ · НАЖМИТЕ, ЧТОБЫ ИЗМЕНИТЬ ИМЯ")
             speakers.forEach { speaker ->
                 OutlinedButton(
                     onClick = {
                         editing = speaker
                         editedName = names[speaker] ?: "Участник ${speaker + 1}"
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
+            Button(
                 onClick = onExport,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text("Экспорт JSON") }
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.dp)
+            ) { Text("Экспортировать JSON", style = MaterialTheme.typography.labelLarge) }
         }
-        Text("РЕПЛИКИ · ${transcript.segments.size}", color = AppTextMuted,
-            style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Arrangement.Center) {
+            Text("Реплики", style = MaterialTheme.typography.titleLarge)
+            Surface(shape = RoundedCornerShape(50), color = AppAccentSoft) {
+                Text(
+                    transcript.segments.size.toString(),
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+                    color = AppAccent,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
         if (transcript.segments.isEmpty()) {
             Text("В этой расшифровке нет распознанных реплик.", color = AppTextMuted)
         } else {
@@ -121,9 +126,10 @@ private fun TranscriptSegmentCard(
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onSegmentClick(segment.startMs) },
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = AppSurface)
+        colors = CardDefaults.cardColors(containerColor = AppCard),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     names[segment.speakerId]
@@ -133,7 +139,7 @@ private fun TranscriptSegmentCard(
                 )
                 Text(formatAudioTime(segment.startMs), color = AppTextMuted)
             }
-            Text(segment.text)
+            Text(segment.text, style = MaterialTheme.typography.bodyLarge)
             Text(
                 "${formatAudioTime(segment.startMs)} – ${formatAudioTime(segment.endMs)} · нажмите для воспроизведения",
                 style = MaterialTheme.typography.labelSmall,
