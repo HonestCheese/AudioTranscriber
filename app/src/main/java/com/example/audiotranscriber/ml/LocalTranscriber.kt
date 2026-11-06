@@ -112,6 +112,7 @@ object LocalTranscriber {
                 gigaamMs = gigaamMs,
                 diarizationMs = diarizationMs,
                 mergeMs = mergeMs,
+                saveMs = 0L,
                 totalMs = elapsedMs(totalStarted)
             )
         )
