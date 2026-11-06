@@ -58,13 +58,27 @@ class TranscriptStore(private val context: Context) {
                 .put("startMs", it.startMs).put("endMs", it.endMs).put("text", it.text))
         }
         root.put("segments", segments)
-        val temp = File(folder, "${transcript.id}.tmp")
+        val temp = File(folder, "\${transcript.id}.tmp")
         temp.writeText(root.toString())
-        val target = File(folder, "${transcript.id}.json")
+        val target = File(folder, "\${transcript.id}.json")
         if (!temp.renameTo(target)) {
             temp.copyTo(target, overwrite = true)
             temp.delete()
         }
+    }
+
+    /** Export the public interchange format requested by the project. */
+    fun exportJson(transcript: SavedTranscript): String {
+        val items = JSONArray()
+        transcript.segments.forEach { segment ->
+            val speakerId = if (segment.speakerId < 0) "speaker_unknown" else "speaker_\${segment.speakerId + 1}"
+            items.put(JSONObject()
+                .put("speaker_id", speakerId)
+                .put("start_ms", segment.startMs)
+                .put("end_ms", segment.endMs)
+                .put("text", segment.text))
+        }
+        return JSONObject().put("transcript", items).toString(2)
     }
 
     fun delete(id: Long) { File(folder, "$id.json").delete() }
