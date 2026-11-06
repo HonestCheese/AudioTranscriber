@@ -125,7 +125,7 @@ private fun TranscriptSegmentCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onSegmentClick(segment.startMs) },
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = AppCard),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
