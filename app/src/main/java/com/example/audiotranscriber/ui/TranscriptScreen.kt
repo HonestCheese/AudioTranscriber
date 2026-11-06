@@ -2,8 +2,6 @@ package com.example.audiotranscriber.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,18 +12,21 @@ import com.example.audiotranscriber.data.SavedTranscript
 import com.example.audiotranscriber.model.TranscriptSegment
 import com.example.audiotranscriber.model.formatAudioTime
 
+/**
+ * Transcript content is embedded directly below the audio player in the Audio tab.
+ * It deliberately has no nested scrolling container or collapse/expand mode:
+ * the parent Audio page owns the single page-level scroll.
+ */
 @Composable
 fun TranscriptScreen(
     transcript: SavedTranscript,
-    onBack: () -> Unit,
     onSaveNames: (Map<Int, String>) -> Unit,
     onSegmentClick: (Int) -> Unit,
     onExport: () -> Unit
 ) {
-    var names by remember(transcript.id) { mutableStateOf(transcript.speakerNames) }
+    var names by remember(transcript.id, transcript.speakerNames) { mutableStateOf(transcript.speakerNames) }
     var editing by remember { mutableIntStateOf(-1) }
     var editedName by remember { mutableStateOf("") }
-    var expanded by remember(transcript.id) { mutableStateOf(true) }
     val speakers = transcript.segments.map { it.speakerId }.filter { it >= 0 }.distinct().sorted()
 
     if (editing >= 0) AlertDialog(
@@ -42,83 +43,10 @@ fun TranscriptScreen(
         dismissButton = { TextButton(onClick = { editing = -1 }) { Text("Отмена") } }
     )
 
-    if (expanded) {
-        // Expanded mode: header and every segment belong to one page-level list.
-        // Scrolling moves the whole page instead of only the transcript panel.
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
-        ) {
-            item {
-                TranscriptHeader(
-                    transcript = transcript,
-                    speakers = speakers,
-                    names = names,
-                    expanded = true,
-                    onBack = onBack,
-                    onExport = onExport,
-                    onToggleExpanded = { expanded = false },
-                    onEditSpeaker = { speaker ->
-                        editing = speaker
-                        editedName = names[speaker] ?: "Участник ${speaker + 1}"
-                    }
-                )
-            }
-            items(transcript.segments) { segment ->
-                TranscriptSegmentCard(segment, names, onSegmentClick)
-            }
-        }
-    } else {
-        Column(
-            Modifier.fillMaxSize().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            TranscriptHeader(
-                transcript = transcript,
-                speakers = speakers,
-                names = names,
-                expanded = false,
-                onBack = onBack,
-                onExport = onExport,
-                onToggleExpanded = { expanded = true },
-                onEditSpeaker = { speaker ->
-                    editing = speaker
-                    editedName = names[speaker] ?: "Участник ${speaker + 1}"
-                }
-            )
-            Card(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AppSurface)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(12.dp)
-                ) {
-                    items(transcript.segments) { segment ->
-                        TranscriptSegmentCard(segment, names, onSegmentClick)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TranscriptHeader(
-    transcript: SavedTranscript,
-    speakers: List<Int>,
-    names: Map<Int, String>,
-    expanded: Boolean,
-    onBack: () -> Unit,
-    onExport: () -> Unit,
-    onToggleExpanded: () -> Unit,
-    onEditSpeaker: (Int) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = onBack) { Text("← К истории") }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text("Расшифровка", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(transcript.fileName, color = AppTextMuted)
         Text(
@@ -150,29 +78,36 @@ private fun TranscriptHeader(
             }
         }
         if (speakers.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                speakers.forEach { speaker ->
-                    OutlinedButton(
-                        onClick = { onEditSpeaker(speaker) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
-                    }
+            Text("УЧАСТНИКИ · нажмите, чтобы изменить имя", color = AppTextMuted,
+                style = MaterialTheme.typography.labelMedium)
+            speakers.forEach { speaker ->
+                OutlinedButton(
+                    onClick = {
+                        editing = speaker
+                        editedName = names[speaker] ?: "Участник ${speaker + 1}"
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(names[speaker] ?: "Участник ${speaker + 1}", maxLines = 1)
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = onExport,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
             ) { Text("Экспорт JSON") }
-            OutlinedButton(
-                onClick = onToggleExpanded,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(10.dp)
-            ) { Text(if (expanded) "Свернуть" else "Развернуть на страницу") }
+        }
+        Text("РЕПЛИКИ · ${transcript.segments.size}", color = AppTextMuted,
+            style = MaterialTheme.typography.labelMedium)
+        if (transcript.segments.isEmpty()) {
+            Text("В этой расшифровке нет распознанных реплик.", color = AppTextMuted)
+        } else {
+            transcript.segments.forEach { segment ->
+                TranscriptSegmentCard(segment, names, onSegmentClick)
+            }
         }
     }
 }
@@ -186,7 +121,7 @@ private fun TranscriptSegmentCard(
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onSegmentClick(segment.startMs) },
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = AppBackground)
+        colors = CardDefaults.cardColors(containerColor = AppSurface)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -218,3 +153,4 @@ private fun TimingRow(label: String, milliseconds: Long) {
 
 private fun formatElapsed(milliseconds: Long): String =
     if (milliseconds < 1000L) "${milliseconds} мс" else "%.2f с".format(milliseconds / 1000.0)
+}
