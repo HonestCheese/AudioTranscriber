@@ -48,13 +48,17 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
         task = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(busy = true, message = "Запуск обработки…", result = null)
             try {
-                val segments = LocalTranscriber.transcribe(app, uri, speakerCount) { message ->
+                val output = LocalTranscriber.transcribe(app, uri, speakerCount) { message ->
                     mutableState.value = mutableState.value.copy(message = message)
                 }
+                val segments = output.segments
                 val names = segments.map { it.speakerId }.distinct().associateWith {
                     if (it < 0) "Не определён" else "Участник ${it + 1}"
                 }
-                val saved = SavedTranscript(System.currentTimeMillis(), fileName, uri.toString(), segments, names)
+                val saved = SavedTranscript(
+                    System.currentTimeMillis(), fileName, uri.toString(), segments, names,
+                    processingTimings = output.timings
+                )
                 withContext(Dispatchers.IO) { TranscriptStore(app).save(saved) }
                 mutableState.value = mutableState.value.copy(message = "Расшифровка сохранена", result = saved)
             } catch (e: CancellationException) {
