@@ -142,26 +142,33 @@ fun RecordingsScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Мои записи", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Нажмите для прослушивания. Зажмите карточку для меню, а значок ⠿ — чтобы перетащить запись.",
-            color = AppTextMuted,
-            style = MaterialTheme.typography.bodySmall
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Записи", style = MaterialTheme.typography.headlineLarge)
+            Text(
+                "Ваша аудиотека",
+                color = AppTextMuted,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         if (recordings.isEmpty()) {
-            Surface(color = AppSurface, shape = RoundedCornerShape(12.dp)) {
-                Column(
-                    Modifier.fillMaxWidth().padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("Записей пока нет")
-                    Button(onClick = onGoToAudio) { Text("Записать или импортировать") }
+            AppPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Записей пока нет", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Запишите разговор или добавьте аудиофайл — он появится здесь.",
+                        color = AppTextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(onClick = onGoToAudio, shape = RoundedCornerShape(14.dp)) {
+                        Text("Добавить аудио")
+                    }
                 }
             }
         } else {
+            AppEyebrow("АУДИОФАЙЛЫ · ${recordings.size}")
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
@@ -185,13 +192,26 @@ fun RecordingsScreen(
                                     onClick = { if (draggingId == null) onOpen(item) },
                                     onLongClick = { if (draggingId == null) menuId = item.id }
                                 ),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isDragging) MaterialTheme.colorScheme.secondaryContainer else AppSurface
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (isDragging) MaterialTheme.colorScheme.secondaryContainer else AppCard,
+                            shadowElevation = 0.dp
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                                Modifier.fillMaxWidth().padding(start = 13.dp, end = 8.dp, top = 13.dp, bottom = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Surface(
+                                    shape = RoundedCornerShape(13.dp),
+                                    color = AppAccentSoft
+                                ) {
+                                    Text(
+                                        "♫",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                        color = AppAccent,
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
                                 Column(
                                     Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(5.dp)
