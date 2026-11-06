@@ -64,11 +64,10 @@ object LocalTranscriber {
         )
         val diarizer = OfflineSpeakerDiarization(config = config)
         val diarization = try {
-            diarizer.processWithCallback(audio, { done, total, _ ->
-                // This sherpa version ignores callback return values. Cancellation is
-                // checked immediately after the native call returns.
-                0
-            }).sortedBy { it.start }
+            // JNI callback lookup is incompatible with Kotlin's generated lambda
+            // signature on Android. No callback is needed here: the UI already
+            // shows this stage, and sherpa ignores callback cancellation results.
+            diarizer.process(audio).sortedBy { it.start }
         } finally { diarizer.release() }
         ensureActive()
         report("Сохранение реплик…")
