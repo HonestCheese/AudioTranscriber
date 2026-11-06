@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import ai.onnxruntime.*
 import com.example.audiotranscriber.model.TranscriptSegment
+import com.example.audiotranscriber.data.ProcessingTimings
 import com.k2fsa.sherpa.onnx.*
 import kotlinx.coroutines.*
 import org.json.JSONArray
@@ -14,18 +15,31 @@ import kotlin.math.*
 
 /** Local pipeline matching the supplied GigaAM + Titanet notebook. */
 object LocalTranscriber {
+    data class TranscriptionOutput(val segments: List<TranscriptSegment>, val timings: ProcessingTimings)
     private data class Word(val text: String, val start: Double, val end: Double)
-    suspend fun transcribe(context: Context, uri: Uri, speakerCount: Int = 2, progress: suspend (String) -> Unit): List<TranscriptSegment> = withContext(Dispatchers.Default) {
+    private data class RecognitionResult(val words: List<Word>, val melMs: Long, val inferenceMs: Long)
+
+    private fun elapsedMs(startedAt: Long): Long = ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(0L)
+
+    suspend fun transcribe(context: Context, uri: Uri, speakerCount: Int = 2, progress: suspend (String) -> Unit): TranscriptionOutput = withContext(Dispatchers.Default) {
+        val totalStarted = System.nanoTime()
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
         check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
         val dir = ModelInstaller.directory(context)
         report("Подготовка аудио…")
+        val decodeStarted = System.nanoTime()
         val audio = AudioDecoder.decode(context, uri)
+        val audioDecodeMs = elapsedMs(decodeStarted)
         require(audio.size >= 320) { "Аудиозапись слишком короткая" }
+        val modelStarted = System.nanoTime()
         val tokens = context.assets.open("tokens.json").bufferedReader().use { JSONArray(it.readText()) }
         val words = mutableListOf<Word>()
+        var melMs = 0L
+        var gigaamMs = 0L
         val duration = audio.size / 16000.0
         Asr(dir, tokens).use { asr ->
+            // Includes token loading and creation of the three ONNX sessions.
+            gigaamMs += elapsedMs(modelStarted)
             var start = 0.0
             while (start < duration) {
                 ensureActive()
@@ -34,8 +48,10 @@ object LocalTranscriber {
                 val samples = audio.copyOfRange((start * 16000).toInt(), min(audio.size, (end * 16000).toInt()))
                 if (samples.size >= 320) {
                     val next = start + 11.0 < duration
-                    val chunkWords = asr.recognize(samples)
-                    for (w in chunkWords) {
+                    val recognition = asr.recognize(samples)
+                    melMs += recognition.melMs
+                    gigaamMs += recognition.inferenceMs
+                    for (w in recognition.words) {
                         val mid = (w.start + w.end) / 2 + start
                         if (start > 0 && mid < start + 0.5) continue
                         if (next && mid >= start + 11.5) continue
@@ -48,6 +64,7 @@ object LocalTranscriber {
         require(words.isNotEmpty()) { "Речь не распознана. Попробуйте запись с отчётливой речью." }
         report("Определение говорящих…")
         ensureActive()
+        val diarizationStarted = System.nanoTime()
         val config = OfflineSpeakerDiarizationConfig(
             segmentation = OfflineSpeakerSegmentationModelConfig(
                 pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(
@@ -70,7 +87,9 @@ object LocalTranscriber {
             diarizer.process(audio).sortedBy { it.start }
         } finally { diarizer.release() }
         ensureActive()
+        val diarizationMs = elapsedMs(diarizationStarted)
         report("Сохранение реплик…")
+        val mergeStarted = System.nanoTime()
         val merged = mutableListOf<TranscriptSegment>()
         for (w in words) {
             val mid = (w.start + w.end) / 2
@@ -84,7 +103,18 @@ object LocalTranscriber {
             } else merged += segment
         }
         require(merged.isNotEmpty()) { "Речь не распознана. Попробуйте запись с отчётливой речью." }
-        merged
+        val mergeMs = elapsedMs(mergeStarted)
+        TranscriptionOutput(
+            segments = merged,
+            timings = ProcessingTimings(
+                audioDecodeMs = audioDecodeMs,
+                melFeaturesMs = melMs,
+                gigaamMs = gigaamMs,
+                diarizationMs = diarizationMs,
+                mergeMs = mergeMs,
+                totalMs = elapsedMs(totalStarted)
+            )
+        )
     }
 
     private class Asr(dir: File, private val tokens: JSONArray) : AutoCloseable {
@@ -114,8 +144,11 @@ object LocalTranscriber {
                 } }
             }
         }
-        suspend fun recognize(audio: FloatArray): List<Word> {
+        suspend fun recognize(audio: FloatArray): RecognitionResult {
+            val melStarted = System.nanoTime()
             val features = MelFeatures.extract(audio)
+            val melMs = elapsedMs(melStarted)
+            val inferenceStarted = System.nanoTime()
             val frames = features.size / 64
             val encoded: FloatArray
             val length: Int
@@ -169,7 +202,7 @@ object LocalTranscriber {
                 last = times[i]; text.append(piece)
             }
             commit()
-            return words
+            return RecognitionResult(words, melMs, elapsedMs(inferenceStarted))
         }
         override fun close() { sessions.asReversed().forEach { it.close() }; sessions.clear() }
     }
