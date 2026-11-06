@@ -3,6 +3,7 @@ package com.example.audiotranscriber.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,111 +41,262 @@ fun HomeScreen(
 ) {
     var sliderPosition by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
-    LaunchedEffect(position, dragging) { if (!dragging) sliderPosition = position.toFloat() }
+    LaunchedEffect(position, dragging) {
+        if (!dragging) sliderPosition = position.toFloat()
+    }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Text("Аудио", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Загрузите запись или создайте новую", color = AppTextMuted)
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = AppSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("ИСТОЧНИК", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
-                Button(
-                    onClick = onImport,
-                    enabled = !isRecording && !isProcessing,
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Аудио", style = MaterialTheme.typography.headlineLarge)
+            Text(
+                "Запись, прослушивание и расшифровка",
+                color = AppTextMuted,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        AppPanel {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                AppEyebrow("ИСТОЧНИК АУДИО")
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                ) { Text("Выбрать аудиофайл") }
-                OutlinedButton(
-                    onClick = onRecord,
-                    enabled = !isProcessing,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    )
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(if (isRecording) "■  Остановить запись" else "●  Начать запись")
+                    Button(
+                        onClick = onImport,
+                        enabled = !isRecording && !isProcessing,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) {
+                        Text("Выбрать файл", style = MaterialTheme.typography.labelLarge)
+                    }
+                    OutlinedButton(
+                        onClick = onRecord,
+                        enabled = !isProcessing,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = if (isRecording) MaterialTheme.colorScheme.error else AppText
+                        )
+                    ) {
+                        Text(
+                            if (isRecording) "Остановить" else "●  Записать",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
-                if (isRecording) Text(
-                    "Запись  %02d:%02d".format(recordingSeconds / 60, recordingSeconds % 60),
-                    color = MaterialTheme.colorScheme.error
-                )
+                if (isRecording) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error) {
+                            Spacer(Modifier.size(8.dp))
+                        }
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            "Идёт запись  ·  %02d:%02d".format(recordingSeconds / 60, recordingSeconds % 60),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
             }
         }
 
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = AppSurface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("ТЕКУЩИЙ ФАЙЛ", style = MaterialTheme.typography.labelMedium, color = AppTextMuted)
-                Text(fileName, style = MaterialTheme.typography.titleMedium)
+        AppPanel {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppEyebrow("ТЕКУЩИЙ ФАЙЛ")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            fileName,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2
+                        )
+                        Text(
+                            if (playerReady) "Готов к воспроизведению" else "Аудиоплеер",
+                            color = AppTextMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(13.dp),
+                        color = AppAccentSoft
+                    ) {
+                        Text(
+                            "♫",
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                            color = AppAccent,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+                }
+
                 if (playerReady && !isRecording) {
                     Slider(
                         value = sliderPosition.coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
-                        onValueChange = { dragging = true; sliderPosition = it },
-                        onValueChangeFinished = { onSeek(sliderPosition.toInt()); dragging = false },
+                        onValueChange = {
+                            dragging = true
+                            sliderPosition = it
+                        },
+                        onValueChangeFinished = {
+                            onSeek(sliderPosition.toInt())
+                            dragging = false
+                        },
                         valueRange = 0f..duration.coerceAtLeast(1).toFloat()
                     )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(formatAudioTime(if (dragging) sliderPosition.toInt() else position), color = AppTextMuted)
-                        Text(formatAudioTime(duration), color = AppTextMuted)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            formatAudioTime(if (dragging) sliderPosition.toInt() else position),
+                            color = AppTextMuted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        Text(
+                            formatAudioTime(duration),
+                            color = AppTextMuted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { onSeek((position - 10000).coerceAtLeast(0)) }) { Text("−10 c") }
-                        Button(onClick = onPlayPause, shape = RoundedCornerShape(10.dp)) {
-                            Text(if (isPlaying) "Пауза" else "▶ Играть")
+                        FilledTonalButton(
+                            onClick = { onSeek((position - 10000).coerceAtLeast(0)) },
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(44.dp)
+                        ) { Text("−10", style = MaterialTheme.typography.labelMedium) }
+
+                        Spacer(Modifier.width(20.dp))
+
+                        Button(
+                            onClick = onPlayPause,
+                            shape = CircleShape,
+                            modifier = Modifier.size(62.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                if (isPlaying) "Ⅱ" else "▶",
+                                style = MaterialTheme.typography.titleLarge
+                            )
                         }
-                        TextButton(onClick = { onSeek((position + 10000).coerceAtMost(duration)) }) { Text("+10 c") }
+
+                        Spacer(Modifier.width(20.dp))
+
+                        FilledTonalButton(
+                            onClick = { onSeek((position + 10000).coerceAtMost(duration)) },
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(44.dp)
+                        ) { Text("+10", style = MaterialTheme.typography.labelMedium) }
                     }
                 } else if (!isRecording) {
-                    Text("Здесь появится плеер", color = AppTextMuted)
+                    Text(
+                        "Выберите аудиофайл или начните запись, чтобы открыть плеер.",
+                        color = AppTextMuted,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }
 
         if (!modelsReady) {
-            Text("Один раз установите модели из архива Colab или семи частей android_models.part01–07.", color = AppTextMuted)
-            OutlinedButton(
-                onClick = onInstallModels,
-                enabled = !isProcessing && !isRecording,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Установить модели") }
+            AppPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Модели не установлены", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Установите локальные ML-модели, чтобы обрабатывать аудио прямо на телефоне.",
+                        color = AppTextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(
+                        onClick = onInstallModels,
+                        enabled = !isProcessing && !isRecording,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Установить модели") }
+                }
+            }
         }
-        Text("Режим: автоматическое определение количества говорящих",
-            color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
-        if (status.isNotBlank()) Text(status, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Распознавание", style = MaterialTheme.typography.titleMedium)
+                Text("Автоматическое определение голосов", color = AppTextMuted,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Surface(shape = RoundedCornerShape(50), color = AppAccentSoft) {
+                Text(
+                    "AUTO",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = AppAccent,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+
+        if (status.isNotBlank()) {
+            AppPanel {
+                Text(status, color = AppTextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         if (isProcessing) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Отменить") }
+            AppPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Обработка аудио", style = MaterialTheme.typography.titleMedium)
+                        Text("В процессе", color = AppAccent, style = MaterialTheme.typography.labelMedium)
+                    }
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Отменить обработку") }
+                }
+            }
         }
+
         Button(
             onClick = onTranscript,
             enabled = hasAudio && !isRecording && !isProcessing && modelsReady,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = PaddingValues(16.dp)
-        ) { Text("Создать расшифровку") }
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Создать расшифровку", style = MaterialTheme.typography.titleMedium)
+        }
 
         Text(
-            "GigaAM + Pyannote / Titanet. Аудио обрабатывается на телефоне без отправки на сервер. Оставьте приложение открытым до завершения.",
+            "Обработка выполняется локально на устройстве. Аудиозаписи не отправляются на сервер.",
             style = MaterialTheme.typography.bodySmall,
             color = AppTextMuted
         )
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        HorizontalDivider(color = AppOutline)
+
         if (transcript != null) {
             TranscriptScreen(
                 transcript = transcript,
@@ -153,19 +305,41 @@ fun HomeScreen(
                 onExport = onExport
             )
         } else {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AppSurface)
-            ) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppPanel {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("Расшифровка появится здесь", fontWeight = FontWeight.SemiBold)
                     Text(
                         "После обработки результат откроется прямо под плеером. Ранее сохранённые результаты можно выбрать во вкладке «Обработка».",
-                        color = AppTextMuted
+                        color = AppTextMuted,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+internal fun AppPanel(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = AppSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+internal fun AppEyebrow(text: String) {
+    Text(
+        text,
+        color = AppTextMuted,
+        style = MaterialTheme.typography.labelMedium
+    )
 }
