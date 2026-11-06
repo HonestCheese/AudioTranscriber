@@ -130,7 +130,7 @@ fun AudioTranscriberApp() {
             player.load(uri)
             duration = player.duration
             playerReady = true
-        } catch (e: Exception) { status = "Ошибка загрузки аудио: \${e.message}" }
+        } catch (e: Exception) { status = "Ошибка загрузки аудио: ${e.message}" }
     }
 
     fun startRecording() {
@@ -143,7 +143,7 @@ fun AudioTranscriberApp() {
             recordingSeconds = 0
             isRecording = true
             status = "Идёт запись..."
-        } catch (e: Exception) { status = "Ошибка записи: \${e.message}" }
+        } catch (e: Exception) { status = "Ошибка записи: ${e.message}" }
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startRecording() else status = "Нет разрешения на микрофон"
@@ -164,7 +164,7 @@ fun AudioTranscriberApp() {
                 audioUri = recordingStore.uri(saved)
                 fileName = saved.name
                 status = "Аудиофайл сохранён в приложении"
-            } catch (e: Exception) { status = "Ошибка импорта: \${e.message}" }
+            } catch (e: Exception) { status = "Ошибка импорта: ${e.message}" }
         }
     }
     val jsonExportLauncher = rememberLauncherForActivityResult(
@@ -179,7 +179,7 @@ fun AudioTranscriberApp() {
             }.onSuccess {
                 status = "JSON экспортирован"
             }.onFailure {
-                status = "Ошибка экспорта JSON: \${it.message}"
+                status = "Ошибка экспорта JSON: ${it.message}"
             }
         }
     }
@@ -216,7 +216,7 @@ fun AudioTranscriberApp() {
                     history = store.loadAll()
                     currentTranscript = updated
                 },
-                onExport = { jsonExportLauncher.launch("\${opened.fileName}.json") },
+                onExport = { jsonExportLauncher.launch("${opened.fileName}.json") },
                 onSegmentClick = { time ->
                     // Восстанавливаем файл, если доступен. Для удалённого исходника реплики остаются сохранены.
                     val savedUri = runCatching { Uri.parse(opened.audioUri) }.getOrNull()
@@ -301,7 +301,7 @@ fun AudioTranscriberApp() {
                             audioUri = recordingStore.uri(saved)
                             fileName = saved.name
                             status = "Запись сохранена"
-                        } catch (e: Exception) { status = "Ошибка сохранения: \${e.message}" }
+                        } catch (e: Exception) { status = "Ошибка сохранения: ${e.message}" }
                         finally { isRecording = false }
                     } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         startRecording()
