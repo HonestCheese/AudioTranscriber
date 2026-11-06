@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** Keep an ongoing transcription alive across activity recreation and rotations. */
 class TranscriptionViewModel(application: Application) : AndroidViewModel(application) {
@@ -38,7 +41,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 mutableState.value = mutableState.value.copy(message = "Установка отменена")
                 throw e
             } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(message = "Ошибка установки: ${e.message}")
+                mutableState.value = mutableState.value.copy(message = "Ошибка установки: \${e.message}")
             } finally { mutableState.value = mutableState.value.copy(busy = false, modelsReady = ModelInstaller.isReady(app)) }
         }
     }
@@ -54,11 +57,13 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 }
                 val segments = output.segments
                 val names = segments.map { it.speakerId }.distinct().associateWith {
-                    if (it < 0) "Не определён" else "Участник ${it + 1}"
+                    if (it < 0) "Не определён" else "Участник \${it + 1}"
                 }
                 val id = System.currentTimeMillis()
+                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(id))
+                val transcriptName = "\${timestamp}_transcript"
                 val initial = SavedTranscript(
-                    id, fileName, uri.toString(), segments, names,
+                    id, transcriptName, uri.toString(), segments, names,
                     processingTimings = output.timings
                 )
                 val store = TranscriptStore(app)
@@ -79,7 +84,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
             } catch (e: OutOfMemoryError) {
                 mutableState.value = mutableState.value.copy(message = "Недостаточно памяти. Закройте другие приложения и попробуйте короткую запись.")
             } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(message = "Ошибка обработки: ${e.message}")
+                mutableState.value = mutableState.value.copy(message = "Ошибка обработки: \${e.message}")
             } finally { mutableState.value = mutableState.value.copy(busy = false) }
         }
     }
