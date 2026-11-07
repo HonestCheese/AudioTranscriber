@@ -23,10 +23,14 @@ internal object EcapaDiarizer {
     private const val RATE = 16000
     private const val WINDOW_SAMPLES = 2 * RATE
     private const val HOP_SAMPLES = RATE
-    // Cosine similarity is NOT sherpa's previous clustering distance threshold.
-    private const val COSINE_THRESHOLD = 0.64f
-    // A one-window outlier should not become an extra person in a longer recording.
-    private const val MIN_WINDOWS_FOR_OUTLIER_CLEANUP = 6
+    // Slightly more permissive threshold reduces false speaker splits caused by
+    // natural changes in pitch, loudness and microphone distance.
+    private const val COSINE_THRESHOLD = 0.62f
+    // Tiny clusters in longer recordings are usually unstable speaker fragments.
+    private const val MIN_WINDOWS_FOR_CLUSTER_CLEANUP = 12
+    private const val MIN_STABLE_CLUSTER_SIZE = 3
+    // Merge a weak cluster only when it is still acoustically close to a stable one.
+    private const val WEAK_CLUSTER_MERGE_THRESHOLD = 0.56
 
     fun diarize(audio: FloatArray, model: File, requestedSpeakers: Int, checkCancelled: () -> Unit): List<Interval> {
         require(audio.isNotEmpty())
@@ -131,10 +135,10 @@ internal object EcapaDiarizer {
         val selected = if (frames.size <= 72) frames.indices.toList()
             else (0 until 72).map { it * (frames.lastIndex) / 71 }.distinct()
         val sample = selected.map { frames[it].embedding }
-        var clusterIds = cluster(sample, requestedSpeakers)
-        if (requestedSpeakers == -1 && clusterIds.toSet().size > 6) {
-            clusterIds = cluster(sample, 6)
-        }
+        // Automatic mode uses the acoustic threshold and support-based cleanup.
+        // Do not force a fixed count (the old fallback forced exactly six speakers
+        // whenever noisy embeddings produced more than six provisional clusters).
+        val clusterIds = cluster(sample, requestedSpeakers)
         val count = (clusterIds.maxOrNull() ?: 0) + 1
         val prototypes = Array(count) { FloatArray(sample[0].size) }
         for (j in sample.indices) {
@@ -259,16 +263,20 @@ internal object EcapaDiarizer {
             groups.removeAt(second)
         }
 
-        // Merge isolated one-window clusters into their closest established speaker.
-        // Do not collapse a genuinely short 2-speaker exchange.
-        if (requestedSpeakers == -1 && vectors.size >= MIN_WINDOWS_FOR_OUTLIER_CLEANUP) {
-            val stable = groups.filter { it.size >= 2 }
+        // In automatic mode, remove weak fragments only in recordings with
+        // enough evidence. A weak cluster is merged only if it is reasonably close
+        // to a stable speaker; acoustically distinct short speakers are preserved.
+        if (requestedSpeakers == -1 && vectors.size >= MIN_WINDOWS_FOR_CLUSTER_CLEANUP) {
+            val stable = groups.filter { it.size >= MIN_STABLE_CLUSTER_SIZE }
             if (stable.isNotEmpty()) {
-                val outliers = groups.filter { it.size == 1 }.toList()
-                for (outlier in outliers) {
-                    val target = stable.maxByOrNull { similarity(centroid(it), centroid(outlier)) }!!
-                    target.addAll(outlier)
-                    groups.remove(outlier)
+                val weakGroups = groups.filter { it.size < MIN_STABLE_CLUSTER_SIZE }.toList()
+                for (weak in weakGroups) {
+                    val target = stable.maxByOrNull { similarity(centroid(it), centroid(weak)) }!!
+                    val score = similarity(centroid(target), centroid(weak))
+                    if (score >= WEAK_CLUSTER_MERGE_THRESHOLD) {
+                        target.addAll(weak)
+                        groups.remove(weak)
+                    }
                 }
             }
         }
