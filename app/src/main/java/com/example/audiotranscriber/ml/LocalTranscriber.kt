@@ -115,7 +115,7 @@ object LocalTranscriber {
         val mergeMs = elapsedMs(mergeStarted)
         TranscriptionOutput(
             segments = merged,
-            words = wordEvidence,
+            words = emptyList(),
             timings = ProcessingTimings(
                 audioDecodeMs = audioDecodeMs,
                 melFeaturesMs = melMs,
