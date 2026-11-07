@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 3
-        versionName = "1.2-stage01-reverb"
+        versionName = "1.3-ecapa"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,35 +61,29 @@ kotlin {
 }
 
 
-// Package the exact Stage 01 FP32 Reverb model. Download runs on the build
-// machine only, never on the phone. The pinned SHA prevents silent model changes.
-val reverbAssets = layout.buildDirectory.dir("generated/reverbAssets")
-val prepareReverbAssets by tasks.registering {
-    outputs.dir(reverbAssets)
+// ECAPA-TDNN includes SpeechBrain's feature extraction and accepts 16 kHz PCM.
+// Download on the build machine only, not on the Android device.
+val ecapaAssets = layout.buildDirectory.dir("generated/ecapaAssets")
+val prepareEcapaAssets by tasks.registering {
+    outputs.dir(ecapaAssets)
     doLast {
-        val archive = temporaryDir.resolve("reverb.tar.bz2")
-        val url = URI("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-reverb-diarization-v1.tar.bz2").toURL()
-        val connection = url.openConnection().apply {
-            connectTimeout = 30_000
-            readTimeout = 120_000
-        }
-        connection.getInputStream().use { input ->
-            archive.outputStream().use { output -> input.copyTo(output) }
-        }
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(archive.readBytes()).joinToString("") { "%02x".format(it.toInt() and 255) }
-        check(digest == "615761e980be1688da0ef81618c056134d63aa55ea0a5f1494c47393b9398eab") {
-            "Reverb archive SHA-256 mismatch"
-        }
-        val extracted = temporaryDir.resolve("extracted").apply { mkdirs() }
-        ant.withGroovyBuilder {
-            "untar"("src" to archive, "dest" to extracted, "compression" to "bzip2")
-        }
-        val source = extracted.resolve("sherpa-onnx-reverb-diarization-v1")
-        val destination = reverbAssets.get().asFile.resolve("reverb").apply { mkdirs() }
-        source.resolve("model.onnx").copyTo(destination.resolve("model.onnx"), overwrite = true)
-        source.resolve("LICENSE").copyTo(destination.resolve("LICENSE"), overwrite = true)
+        val target = ecapaAssets.get().asFile.resolve("ecapa/ecapa-any-length.onnx")
+        if (target.isFile && target.length() > 50L * 1024 * 1024) return@doLast
+        target.parentFile.mkdirs()
+        val temporary = File(target.parentFile, "ecapa-downloading.tmp")
+        try {
+            val url = URI("https://huggingface.co/kenrunio/transcriber-speaker-onnx/resolve/main/ecapa-any-length.onnx").toURL()
+            val connection = url.openConnection().apply {
+                connectTimeout = 30_000
+                readTimeout = 180_000
+            }
+            connection.getInputStream().use { input ->
+                temporary.outputStream().use { output -> input.copyTo(output) }
+            }
+            check(temporary.length() > 50L * 1024 * 1024) { "Downloaded ECAPA model is incomplete" }
+            check(temporary.renameTo(target)) { "Unable to move downloaded ECAPA model" }
+        } finally { temporary.delete() }
     }
 }
-android.sourceSets.getByName("main").assets.srcDir(reverbAssets)
-tasks.named("preBuild") { dependsOn(prepareReverbAssets) }
+android.sourceSets.getByName("main").assets.srcDir(ecapaAssets)
+tasks.named("preBuild") { dependsOn(prepareEcapaAssets) }

@@ -26,34 +26,19 @@ object ModelInstaller {
         return expected.keys().asSequence().all { name -> File(dir, name).length() == expected.getJSONObject(name).getLong("size") }
     }
 
-    /** Reverb is bundled separately; the existing GigaAM/Titanet ZIP stays valid. */
-    suspend fun prepareReverb(context: Context): File = withContext(Dispatchers.IO) {
-        val target = File(context.noBackupFilesDir, "reverb-v1.onnx")
-        val expectedHash = "8249e2e323f8fb0566a387d94b40a73d0b75d54ee60d02dcd729a56a5ba8ecea"
-        fun hash(file: File): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().use { input ->
-                val buffer = ByteArray(128 * 1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    digest.update(buffer, 0, count)
-                }
-            }
-            return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
-        }
-        if (target.length() == 9512223L && hash(target) == expectedHash) return@withContext target
-        val temporary = File(context.noBackupFilesDir, "reverb-v1.tmp")
+    /** ECAPA is bundled in the APK; older ASR archives remain accepted unchanged. */
+    suspend fun prepareEcapa(context: Context): File = withContext(Dispatchers.IO) {
+        val destination = File(context.noBackupFilesDir, "ecapa-any-length-v1.onnx")
+        val asset = "ecapa/ecapa-any-length.onnx"
+        if (destination.isFile && destination.length() > 50L * 1024 * 1024) return@withContext destination
+        val temporary = File(context.noBackupFilesDir, "ecapa-installing.tmp")
         try {
-            context.assets.open("reverb/model.onnx").use { input ->
-                temporary.outputStream().use { output -> input.copyTo(output) }
-            }
-            check(temporary.length() == 9512223L && hash(temporary) == expectedHash) {
-                "Повреждена встроенная модель Reverb. Установите APK заново поверх приложения."
-            }
+            context.assets.open(asset).use { input -> temporary.outputStream().use { input.copyTo(it) } }
+            check(temporary.length() > 50L * 1024 * 1024) { "ECAPA-TDNN model missing or incomplete" }
             currentCoroutineContext().ensureActive()
-            check(temporary.renameTo(target)) { "Не удалось установить Reverb" }
-            target
+            if (destination.exists()) destination.delete()
+            check(temporary.renameTo(destination)) { "Unable to install ECAPA-TDNN model" }
+            destination
         } finally { temporary.delete() }
     }
 

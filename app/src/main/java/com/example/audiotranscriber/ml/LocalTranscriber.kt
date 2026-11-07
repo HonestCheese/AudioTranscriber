@@ -5,7 +5,6 @@ import android.net.Uri
 import ai.onnxruntime.*
 import com.example.audiotranscriber.model.TranscriptSegment
 import com.example.audiotranscriber.data.ProcessingTimings
-import com.k2fsa.sherpa.onnx.*
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import java.io.File
@@ -13,7 +12,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import kotlin.math.*
 
-/** Local pipeline matching the Stage 01 GigaAM + Reverb + Titanet notebook. */
+/** Local GigaAM ASR with ECAPA-TDNN speaker embeddings and cosine clustering. */
 object LocalTranscriber {
     data class TranscriptionOutput(val segments: List<TranscriptSegment>, val timings: ProcessingTimings)
     private data class Word(val text: String, val start: Double, val end: Double)
@@ -26,7 +25,7 @@ object LocalTranscriber {
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
         check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
         val dir = ModelInstaller.directory(context)
-        val reverb = ModelInstaller.prepareReverb(context)
+        val ecapa = ModelInstaller.prepareEcapa(context)
         report("Подготовка аудио…")
         val decodeStarted = System.nanoTime()
         val audio = AudioDecoder.decode(context, uri)
@@ -66,34 +65,16 @@ object LocalTranscriber {
         report("Определение говорящих…")
         ensureActive()
         val diarizationStarted = System.nanoTime()
-        val config = OfflineSpeakerDiarizationConfig(
-            segmentation = OfflineSpeakerSegmentationModelConfig(
-                pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(
-                    model = reverb.path,
-                    windowShiftRatio = 0.1f
-                ), numThreads = 2
-            ),
-            embedding = SpeakerEmbeddingExtractorConfig(
-                model = File(dir, "diarization/titanet.onnx").path,
-                numThreads = 2
-            ),
-            clustering = FastClusteringConfig(numClusters = speakerCount, threshold = 0.95f),
-            minDurationOn = 0.3f, minDurationOff = 0.5f
-        )
-        val diarizer = OfflineSpeakerDiarization(config = config)
-        val diarization = try {
-            // JNI callback lookup is incompatible with Kotlin's generated lambda
-            // signature on Android. No callback is needed here: the UI already
-            // shows this stage, and sherpa ignores callback cancellation results.
-            diarizer.process(audio).sortedBy { it.start }
-        } finally { diarizer.release() }
+        val diarization = EcapaDiarizer.diarize(audio, ecapa, speakerCount) {
+            ensureActive()
+        }
         ensureActive()
         val diarizationMs = elapsedMs(diarizationStarted)
         report("Сохранение реплик…")
         val mergeStarted = System.nanoTime()
         val merged = mutableListOf<TranscriptSegment>()
         val speakers = Stage01Speakers(diarization.map {
-            Stage01Speakers.Interval(it.start.toDouble(), it.end.toDouble(), it.speaker)
+            Stage01Speakers.Interval(it.start, it.end, it.speaker)
         })
         for (w in words.sortedWith(compareBy<Word> { it.start }.thenBy { it.end })) {
             val mid = (w.start + w.end) / 2
