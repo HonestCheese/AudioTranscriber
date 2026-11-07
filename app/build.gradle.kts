@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.audiotranscriber"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.5-notebook-pipeline"
+        versionCode = 6
+        versionName = "1.6-playback-stream"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

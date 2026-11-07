@@ -103,7 +103,7 @@ object ModelInstaller {
                 REVERB_ARCHIVE_URL,
                 archive,
                 REVERB_ARCHIVE_SIZE,
-                expectedSha256 = null,
+                expectedSha256 = "615761e980be1688da0ef81618c056134d63aa55ea0a5f1494c47393b9398eab",
                 label = "Reverb v1",
                 progress = progress
             )

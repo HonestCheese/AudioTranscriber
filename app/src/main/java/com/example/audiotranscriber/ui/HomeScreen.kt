@@ -44,6 +44,7 @@ fun HomeScreen(
 ) {
     var sliderPosition by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
+    var streamVisible by remember(fileName, transcript?.id) { mutableStateOf(false) }
     LaunchedEffect(position, dragging) {
         if (!dragging) sliderPosition = position.toFloat()
     }
@@ -215,6 +216,23 @@ fun HomeScreen(
                     )
                 }
             }
+        }
+
+        OutlinedButton(
+            onClick = { streamVisible = !streamVisible },
+            enabled = hasAudio && !isRecording,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = if (streamVisible) AppAccent else AppText
+            )
+        ) { Text(if (streamVisible) "Поток · выключить" else "Поток") }
+
+        if (streamVisible) {
+            PlaybackPhrasePanel(
+                transcript = transcript,
+                positionMs = if (dragging) sliderPosition.toInt() else position
+            )
         }
 
         if (!modelsReady) {

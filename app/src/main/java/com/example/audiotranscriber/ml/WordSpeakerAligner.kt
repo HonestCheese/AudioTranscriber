@@ -243,7 +243,7 @@ internal object WordSpeakerAligner {
         }
 
         return words.mapIndexed { index, word ->
-            if (word.scores.isEmpty() || (word.scores.values.maxOrNull() ?: 0.0) < MIN_WORD_OVERLAP) {
+            if ((word.scores[states[path[index]]] ?: 0.0) < MIN_WORD_OVERLAP) {
                 -1
             } else {
                 states[path[index]]
