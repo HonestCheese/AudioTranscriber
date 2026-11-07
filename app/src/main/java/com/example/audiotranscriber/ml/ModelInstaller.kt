@@ -26,52 +26,17 @@ object ModelInstaller {
         return expected.keys().asSequence().all { name -> File(dir, name).length() == expected.getJSONObject(name).getLong("size") }
     }
 
-    /** ECAPA is bundled in the APK; older ASR archives remain accepted unchanged. */
-    suspend fun prepareEcapa(context: Context): File = withContext(Dispatchers.IO) {
-        val destination = File(context.noBackupFilesDir, "ecapa-any-length-v1.onnx")
-        val asset = "ecapa/ecapa-any-length.onnx"
-        if (destination.isFile && destination.length() > 50L * 1024 * 1024) return@withContext destination
-        val temporary = File(context.noBackupFilesDir, "ecapa-installing.tmp")
-        try {
-            context.assets.open(asset).use { input -> temporary.outputStream().use { input.copyTo(it) } }
-            check(temporary.length() > 50L * 1024 * 1024) { "ECAPA-TDNN model missing or incomplete" }
-            currentCoroutineContext().ensureActive()
-            if (destination.exists()) destination.delete()
-            check(temporary.renameTo(destination)) { "Unable to install ECAPA-TDNN model" }
-            destination
-        } finally { temporary.delete() }
-    }
+    /** Required hybrid diarization models are installed from the verified model archive. */
+    fun pyannoteModel(context: Context): File =
+        File(directory(context), "diarization/segmentation.onnx")
 
-    /** The pinned GGUF is bundled in APK assets, with no phone-side download. */
-    suspend fun prepareQwen(context: Context): File = withContext(Dispatchers.IO) {
-        val destination = File(context.noBackupFilesDir, "qwen3-0.6b-q4km-v1.gguf")
-        val digestExpected = "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a"
-        if (destination.isFile && destination.length() > 300L * 1024 * 1024) {
-            return@withContext destination
-        }
-        val temporary = File(context.noBackupFilesDir, "qwen3-installing.tmp")
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            context.assets.open("llm/qwen3-0.6b-q4km.gguf").use { input ->
-                temporary.outputStream().use { output ->
-                    val buffer = ByteArray(128 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        digest.update(buffer, 0, n)
-                    }
-                }
-            }
-            val checksum = digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
-            check(temporary.length() > 300L * 1024 * 1024 && checksum == digestExpected) {
-                "Встроенная Qwen3 повреждена. Переустановите APK."
-            }
-            if (destination.exists()) destination.delete()
-            check(temporary.renameTo(destination)) { "Не удалось установить Qwen3" }
-            destination
-        } finally { temporary.delete() }
+    fun titanetModel(context: Context): File =
+        File(directory(context), "diarization/titanet.onnx")
+
+    fun requireHybridModels(context: Context) {
+        check(isReady(context)) { "Сначала установите комплект локальных моделей." }
+        check(pyannoteModel(context).isFile) { "Не найдена Pyannote Segmentation 3.0." }
+        check(titanetModel(context).isFile) { "Не найдена NeMo Titanet Small." }
     }
 
     suspend fun install(context: Context, uris: List<Uri>, progress: (String) -> Unit) = withContext(Dispatchers.IO) {
