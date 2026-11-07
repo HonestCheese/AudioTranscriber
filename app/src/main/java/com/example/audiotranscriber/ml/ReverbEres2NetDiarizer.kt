@@ -74,13 +74,14 @@ internal object ReverbEres2NetDiarizer {
                 "Reverb/ERes2NetV2 ожидает 16 kHz, получено: ${diarizer.sampleRate()} Hz"
             }
             checkCancelled()
-            val diarizationResult = diarizer.processWithCallback(
-                samples = audio,
-                callback = { _: Int, _: Int, _: Long ->
-                    checkCancelled()
-                    0
-                }
-            )
+            // Use the non-callback JNI entry point. sherpa-onnx 2.0.1's
+            // processWithCallback expects a primitive Kotlin Function3 bridge
+            // (invoke(IIJ)Integer); Kotlin 2.1 generates a lambda class without
+            // that exact method, causing a fatal JNI NoSuchMethodError.
+            // Cancellation is checked immediately before and after native work.
+            checkCancelled()
+            val diarizationResult = diarizer.process(samples = audio)
+            checkCancelled()
             return diarizationResult.asSequence()
                 .filter { it.end > it.start && it.speaker >= 0 }
                 .map {
