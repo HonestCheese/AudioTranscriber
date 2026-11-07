@@ -69,8 +69,7 @@ fun TranscriptScreen(
                     TimingRow("Подготовка аудио", timings.audioDecodeMs)
                     TimingRow("Mel-признаки", timings.melFeaturesMs)
                     TimingRow("GigaAM · распознавание", timings.gigaamMs)
-                    TimingRow("ECAPA · оценки голоса", timings.diarizationMs)
-                    TimingRow("Qwen3 · неоднозначные слова", timings.contextLlmMs)
+                    TimingRow("Pyannote + Titanet · диаризация", timings.diarizationMs)
                     TimingRow("Объединение реплик", timings.mergeMs)
                     TimingRow("Сохранение результата", timings.saveMs)
             }
