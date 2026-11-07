@@ -27,7 +27,7 @@ object LocalTranscriber {
     suspend fun transcribe(context: Context, uri: Uri, speakerCount: Int = -1, progress: suspend (String) -> Unit): TranscriptionOutput = withContext(Dispatchers.Default) {
         val totalStarted = System.nanoTime()
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
-        check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
+        ModelInstaller.requireHybridModels(context)
         val dir = ModelInstaller.directory(context)
         report("Подготовка аудио…")
         val decodeStarted = System.nanoTime()
