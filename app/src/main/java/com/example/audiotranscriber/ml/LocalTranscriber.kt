@@ -12,7 +12,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import kotlin.math.*
 
-/** Local GigaAM ASR with ECAPA-TDNN speaker embeddings and cosine clustering. */
+/** Local GigaAM v3 ASR + Pyannote 3.0 / NeMo Titanet hybrid diarization. */
 object LocalTranscriber {
     data class TranscriptionOutput(
         val segments: List<TranscriptSegment>,
@@ -29,7 +29,6 @@ object LocalTranscriber {
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
         check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
         val dir = ModelInstaller.directory(context)
-        val ecapa = ModelInstaller.prepareEcapa(context)
         report("Подготовка аудио…")
         val decodeStarted = System.nanoTime()
         val audio = AudioDecoder.decode(context, uri)
@@ -66,57 +65,51 @@ object LocalTranscriber {
             }
         } // Release GigaAM before allocating diarization models.
         require(words.isNotEmpty()) { "Речь не распознана. Попробуйте запись с отчётливой речью." }
-        report("Определение говорящих…")
+        report("Hybrid-диаризация: Pyannote + Titanet…")
+        val coroutineContext = currentCoroutineContext()
         ensureActive()
         val diarizationStarted = System.nanoTime()
         val sortedWords = words.sortedWith(compareBy<Word> { it.start }.thenBy { it.end })
-        val evidence = EcapaDiarizer.scoreWords(
-            audio, ecapa,
-            sortedWords.map { EcapaDiarizer.WordSpan(it.text, it.start, it.end) },
-            speakerCount
-        ) { ensureActive() }
+        val diarization = PyannoteTitanetDiarizer.diarize(
+            audio = audio,
+            modelsDirectory = dir,
+            requestedSpeakers = speakerCount
+        ) {
+            coroutineContext.ensureActive()
+        }
         ensureActive()
         val diarizationMs = elapsedMs(diarizationStarted)
-        val qwenReviewCount = ContextSpeakerResolver.reviewableWordCount(evidence)
-        if (qwenReviewCount < 8) {
-            report("Qwen пропущена: ECAPA уверенно распределила голоса")
-        } else {
-            report("Qwen3: проверка $qwenReviewCount неоднозначных слов…")
-        }
-        val contextStarted = System.nanoTime()
-        val resolved = if (qwenReviewCount < 8) {
-            // Do not even copy/load the 0.6B GGUF when acoustic evidence is clear.
-            ContextSpeakerResolver.Resolution(AcousticWordResolver.resolve(evidence), false)
-        } else {
-            try {
-                ContextSpeakerResolver.resolve(evidence, ModelInstaller.prepareQwen(context))
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (e: Exception) {
-                ContextSpeakerResolver.Resolution(
-                    AcousticWordResolver.resolve(evidence),
-                    false,
-                    e.message
-                )
+
+        // Pyannote/Titanet returns speaker time intervals. Assign each GigaAM word
+        // to the interval containing its midpoint; keep unmatched words as unknown.
+        val speakerMatcher = Stage01Speakers(
+            diarization.map {
+                Stage01Speakers.Interval(it.start, it.end, it.speaker)
             }
-        }
-        val contextLlmMs = elapsedMs(contextStarted)
-        if (resolved.warning != null) report("Qwen недоступна — используем ECAPA")
-        report("Сохранение реплик…")
+        )
+
+        report("Объединение слов и говорящих…")
         val mergeStarted = System.nanoTime()
         val merged = mutableListOf<TranscriptSegment>()
-        val initialLabels = AcousticWordResolver.resolve(evidence)
-        val wordEvidence = evidence.mapIndexed { i, word ->
-            val selected = resolved.ids.getOrElse(i) { -1 }
-            word.copy(selectedSpeakerId = selected, changedByLlm = selected != initialLabels[i])
-        }
-        for ((index, w) in sortedWords.withIndex()) {
-            val speaker = wordEvidence[index].selectedSpeakerId
-            val segment = TranscriptSegment(speaker, (w.start * 1000).roundToInt(), (w.end * 1000).roundToInt(), w.text)
+        for (w in sortedWords) {
+            val speaker = speakerMatcher.speakerAt((w.start + w.end) / 2.0)
+            val segment = TranscriptSegment(
+                speaker,
+                (w.start * 1000).roundToInt(),
+                (w.end * 1000).roundToInt(),
+                w.text
+            )
             val previous = merged.lastOrNull()
-            if (previous != null && previous.speakerId == speaker && segment.startMs - previous.endMs <= 1000) {
-                merged[merged.lastIndex] = previous.copy(endMs = max(previous.endMs, segment.endMs), text = previous.text + " " + segment.text)
-            } else merged += segment
+            if (previous != null && previous.speakerId == speaker &&
+                segment.startMs - previous.endMs <= 1000
+            ) {
+                merged[merged.lastIndex] = previous.copy(
+                    endMs = max(previous.endMs, segment.endMs),
+                    text = previous.text + " " + segment.text
+                )
+            } else {
+                merged += segment
+            }
         }
         require(merged.isNotEmpty()) { "Речь не распознана. Попробуйте запись с отчётливой речью." }
         val mergeMs = elapsedMs(mergeStarted)
@@ -128,7 +121,6 @@ object LocalTranscriber {
                 melFeaturesMs = melMs,
                 gigaamMs = gigaamMs,
                 diarizationMs = diarizationMs,
-                contextLlmMs = contextLlmMs,
                 mergeMs = mergeMs,
                 saveMs = 0L,
                 totalMs = elapsedMs(totalStarted)
