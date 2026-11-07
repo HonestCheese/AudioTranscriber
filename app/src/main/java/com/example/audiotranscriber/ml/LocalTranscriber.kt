@@ -77,7 +77,12 @@ object LocalTranscriber {
         ) { ensureActive() }
         ensureActive()
         val diarizationMs = elapsedMs(diarizationStarted)
-        report("Контекстная проверка слов · Qwen3…")
+        val qwenReviewCount = ContextSpeakerResolver.reviewableWordCount(evidence)
+        if (qwenReviewCount < 8) {
+            report("Qwen пропущена: ECAPA уверенно распределила голоса")
+        } else {
+            report("Qwen3: проверка $qwenReviewCount неоднозначных слов…")
+        }
         val contextStarted = System.nanoTime()
         val resolved = try {
             ContextSpeakerResolver.resolve(evidence, ModelInstaller.prepareQwen(context))
