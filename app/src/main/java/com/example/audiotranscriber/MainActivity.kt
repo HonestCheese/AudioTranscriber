@@ -37,6 +37,7 @@ import com.example.audiotranscriber.data.SavedRecording
 import com.example.audiotranscriber.data.SavedTranscript
 import com.example.audiotranscriber.data.TranscriptStore
 import com.example.audiotranscriber.ml.TranscriptionViewModel
+import com.example.audiotranscriber.ml.DiarizationAudioVariant
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.view.WindowManager
 import com.example.audiotranscriber.ui.*
@@ -101,6 +102,7 @@ fun AudioTranscriberApp() {
     var pendingSeekMs by remember { mutableIntStateOf(-1) }
     var playAfterPendingSeek by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var diarizationAudioVariant by remember { mutableStateOf(DiarizationAudioVariant.ORIGINAL) }
 
     LaunchedEffect(processing.result) {
         processing.result?.let { result ->
@@ -382,6 +384,8 @@ fun AudioTranscriberApp() {
                         isProcessing = processing.busy,
                         modelsReady = processing.modelsReady,
                         onInstallModels = { modelPicker.launch(arrayOf("*/*")) },
+                        audioVariant = diarizationAudioVariant,
+                        onAudioVariantChange = { diarizationAudioVariant = it },
                         onCancel = ml::cancel,
                         onRecord = {
                             if (isRecording) {
@@ -436,7 +440,7 @@ fun AudioTranscriberApp() {
                                 player.pause()
                                 isPlaying = false
                                 currentTranscript = null
-                                ml.transcribe(uri, fileName, -1)
+                                ml.transcribe(uri, fileName, diarizationAudioVariant)
                             }
                         },
                         transcript = currentTranscript,

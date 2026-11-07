@@ -9,51 +9,46 @@ import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
 import java.io.File
 
 /**
- * Hybrid offline diarization:
- * Pyannote Segmentation 3.0 detects speaker activity,
- * NeMo Titanet Small extracts speaker embeddings,
- * sherpa-onnx clusters embeddings into speaker identities.
+ * The notebook's exact diarization stack:
+ * Reverb v1 segmentation + 3D-Speaker ERes2NetV2 + FastClustering.
  */
-internal object PyannoteTitanetDiarizer {
+internal object ReverbEres2NetDiarizer {
     data class Interval(
         val start: Double,
         val end: Double,
-        val speaker: Int,
-        val confidence: Float
+        val speaker: Int
     )
 
     private const val SAMPLE_RATE = 16_000
     private const val WINDOW_SHIFT_RATIO = 0.1f
-    private const val CLUSTER_THRESHOLD = 0.5f
+    private const val CLUSTER_THRESHOLD = 0.63f
     private const val MIN_DURATION_ON = 0.3f
     private const val MIN_DURATION_OFF = 0.5f
 
     fun diarize(
         audio: FloatArray,
         modelsDirectory: File,
-        requestedSpeakers: Int,
         checkCancelled: () -> Unit
     ): List<Interval> {
         require(audio.isNotEmpty()) { "Нет аудио для диаризации" }
-        require(requestedSpeakers == -1 || requestedSpeakers > 0)
 
-        val segmentationModel = File(modelsDirectory, "diarization/segmentation.onnx")
-        val embeddingModel = File(modelsDirectory, "diarization/titanet.onnx")
+        val reverbModel = File(modelsDirectory, "diarization/reverb/model.onnx")
+        val embeddingModel = File(modelsDirectory, "diarization/eres2netv2.onnx")
 
-        require(segmentationModel.isFile && segmentationModel.length() > 1_000_000L) {
-            "Не найдена Pyannote Segmentation 3.0. Переустановите комплект моделей."
+        require(reverbModel.isFile && reverbModel.length() > 1_000_000L) {
+            "Не найдена модель Reverb v1."
         }
-        require(embeddingModel.isFile && embeddingModel.length() > 10_000_000L) {
-            "Не найдена NeMo Titanet Small. Переустановите комплект моделей."
+        require(embeddingModel.isFile && embeddingModel.length() == 71_441_526L) {
+            "Не найдена или повреждена модель 3D-Speaker ERes2NetV2."
         }
 
         val config = OfflineSpeakerDiarizationConfig(
             segmentation = OfflineSpeakerSegmentationModelConfig(
                 pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(
-                    model = segmentationModel.absolutePath,
+                    model = reverbModel.absolutePath,
                     windowShiftRatio = WINDOW_SHIFT_RATIO
                 ),
-                numThreads = 2,
+                numThreads = 1,
                 debug = false,
                 provider = "cpu"
             ),
@@ -64,9 +59,9 @@ internal object PyannoteTitanetDiarizer {
                 provider = "cpu"
             ),
             clustering = FastClusteringConfig(
-                numClusters = if (requestedSpeakers > 0) requestedSpeakers else -1,
+                numClusters = -1,
                 threshold = CLUSTER_THRESHOLD,
-                computeConfidence = true
+                computeConfidence = false
             ),
             minDurationOn = MIN_DURATION_ON,
             minDurationOff = MIN_DURATION_OFF
@@ -76,21 +71,23 @@ internal object PyannoteTitanetDiarizer {
         val diarizer = OfflineSpeakerDiarization(config = config)
         try {
             require(diarizer.sampleRate() == SAMPLE_RATE) {
-                "Pyannote/Titanet ожидает 16 kHz, получено: ${diarizer.sampleRate()} Hz"
+                "Reverb/ERes2NetV2 ожидает 16 kHz, получено: ${diarizer.sampleRate()} Hz"
             }
             checkCancelled()
-            return diarizer.processWithCallback(audio) { _, _, _ ->
-                checkCancelled()
-                0
-            }
-                .asSequence()
+            val diarizationResult = diarizer.processWithCallback(
+                samples = audio,
+                callback = { _: Int, _: Int, _: Long ->
+                    checkCancelled()
+                    0
+                }
+            )
+            return diarizationResult.asSequence()
                 .filter { it.end > it.start && it.speaker >= 0 }
                 .map {
                     Interval(
                         start = it.start.toDouble(),
                         end = it.end.toDouble(),
-                        speaker = it.speaker,
-                        confidence = it.confidence
+                        speaker = it.speaker
                     )
                 }
                 .sortedBy { it.start }

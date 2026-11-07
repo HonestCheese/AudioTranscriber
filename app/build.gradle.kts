@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.audiotranscriber"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.4-word-context"
+        versionCode = 5
+        versionName = "1.5-notebook-pipeline"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,7 +35,8 @@ android {
 
 dependencies {
     implementation("com.github.wendykierp:JTransforms:3.1")
-    implementation("com.k2fsa.sherpa:sherpa-onnx-static-link-onnxruntime:1.13.8@aar")
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("com.k2fsa.sherpa:sherpa-onnx-static-link-onnxruntime:2.0.1@aar")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation(platform(libs.androidx.compose.bom))

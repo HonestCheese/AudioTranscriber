@@ -25,6 +25,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
         val modelsReady: Boolean = false,
         val result: SavedTranscript? = null
     )
+
     private val app = application
     private val mutableState = MutableStateFlow(State(modelsReady = ModelInstaller.isReady(app)))
     val state = mutableState.asStateFlow()
@@ -33,41 +34,74 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     fun installModels(uris: List<Uri>) {
         if (mutableState.value.busy) return
         task = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(busy = true, message = "Проверка архива…", result = null)
+            mutableState.value = mutableState.value.copy(
+                busy = true,
+                message = "Проверка архива GigaAM…",
+                result = null
+            )
             try {
-                ModelInstaller.install(app, uris) { message -> mutableState.value = mutableState.value.copy(message = message) }
-                mutableState.value = mutableState.value.copy(modelsReady = true, message = "Модели установлены. Можно расшифровывать аудио.")
-            } catch (e: CancellationException) {
-                mutableState.value = mutableState.value.copy(message = "Установка отменена")
-                throw e
-            } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(message = "Ошибка установки: ${e.message}")
-            } finally { mutableState.value = mutableState.value.copy(busy = false, modelsReady = ModelInstaller.isReady(app)) }
+                ModelInstaller.install(app, uris) { message ->
+                    mutableState.value = mutableState.value.copy(message = message)
+                }
+                mutableState.value = mutableState.value.copy(
+                    modelsReady = true,
+                    message = "GigaAM установлен. Reverb и ERes2NetV2 загрузятся при первой обработке; DPDFNet2 — если выберете его вариант."
+                )
+            } catch (error: CancellationException) {
+                mutableState.value = mutableState.value.copy(message = "Установка отменена.")
+                throw error
+            } catch (error: Exception) {
+                mutableState.value = mutableState.value.copy(
+                    message = "Ошибка установки: ${error.message}"
+                )
+            } finally {
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    modelsReady = ModelInstaller.isReady(app)
+                )
+            }
         }
     }
 
-    fun transcribe(uri: Uri, fileName: String, speakerCount: Int) {
+    fun transcribe(
+        uri: Uri,
+        fileName: String,
+        audioVariant: DiarizationAudioVariant
+    ) {
         if (mutableState.value.busy) return
         task = viewModelScope.launch {
             val totalStarted = System.nanoTime()
-            mutableState.value = mutableState.value.copy(busy = true, message = "Запуск обработки…", result = null)
+            mutableState.value = mutableState.value.copy(
+                busy = true,
+                message = "Запуск обработки…",
+                result = null
+            )
             try {
-                val output = LocalTranscriber.transcribe(app, uri, speakerCount) { message ->
+                val output = LocalTranscriber.transcribe(app, uri, audioVariant) { message ->
                     mutableState.value = mutableState.value.copy(message = message)
                 }
-                val segments = output.segments
-                val names = segments.map { it.speakerId }.distinct().associateWith {
-                    if (it < 0) "Не определён" else "Участник ${it + 1}"
-                }
+                val names = output.speakers.associate { speaker ->
+                    speaker.speakerId to "Участник ${speaker.speakerId + 1}"
+                } + (output.segments.filter { it.speakerId < 0 }
+                    .takeIf { it.isNotEmpty() }?.let { mapOf(-1 to "Не определён") } ?: emptyMap())
+
                 val id = System.currentTimeMillis()
                 val timestamp = SimpleDateFormat("yy-MM-dd HH:mm", Locale.US).format(Date(id))
-                val transcriptName = "${timestamp}_transcript"
                 val initial = SavedTranscript(
-                    id, transcriptName, uri.toString(), segments, names,
-                    engine = "gigaam-v3-pyannote3-titanet-hybrid",
-                    wordEvidence = output.words,
-                    processingTimings = output.timings
+                    id = id,
+                    fileName = "${timestamp}_transcript",
+                    audioUri = uri.toString(),
+                    segments = output.segments,
+                    durationMs = output.durationMs,
+                    speakerNames = names,
+                    engine = "gigaam-v3-reverb-eres2netv2-dpdfnet2",
+                    processingTimings = output.timings,
+                    speakers = output.speakers,
+                    wordAssignments = output.words,
+                    diarizationAudioVariant = output.diarizationAudioVariant,
+                    recordingId = fileName
                 )
+
                 val store = TranscriptStore(app)
                 val saveStarted = System.nanoTime()
                 withContext(Dispatchers.IO) { store.save(initial) }
@@ -79,22 +113,35 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     )
                 )
                 withContext(Dispatchers.IO) { store.save(saved) }
-                mutableState.value = mutableState.value.copy(message = "Расшифровка сохранена", result = saved)
-            } catch (e: CancellationException) {
-                mutableState.value = mutableState.value.copy(message = "Обработка отменена")
-                throw e
-            } catch (e: OutOfMemoryError) {
-                mutableState.value = mutableState.value.copy(message = "Недостаточно памяти. Закройте другие приложения и попробуйте короткую запись.")
-            } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(message = "Ошибка обработки: ${e.message}")
-            } finally { mutableState.value = mutableState.value.copy(busy = false) }
+                mutableState.value = mutableState.value.copy(
+                    message = "Расшифровка сохранена",
+                    result = saved
+                )
+            } catch (error: CancellationException) {
+                mutableState.value = mutableState.value.copy(message = "Обработка отменена.")
+                throw error
+            } catch (error: OutOfMemoryError) {
+                mutableState.value = mutableState.value.copy(
+                    message = "Недостаточно памяти. Закройте другие приложения и попробуйте короткую запись."
+                )
+            } catch (error: Exception) {
+                mutableState.value = mutableState.value.copy(
+                    message = "Ошибка обработки: ${error.message}"
+                )
+            } finally {
+                mutableState.value = mutableState.value.copy(busy = false)
+            }
         }
     }
 
     fun cancel() {
-        mutableState.value = mutableState.value.copy(message = "Остановка… Ожидаем завершения текущего шага модели.")
+        mutableState.value = mutableState.value.copy(
+            message = "Остановка… Ожидаем завершения текущего шага модели."
+        )
         task?.cancel()
     }
 
-    fun consumeResult() { mutableState.value = mutableState.value.copy(result = null) }
+    fun consumeResult() {
+        mutableState.value = mutableState.value.copy(result = null)
+    }
 }

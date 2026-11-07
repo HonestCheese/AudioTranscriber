@@ -1,47 +1,100 @@
-# AudioTranscriber — Android, offline ASR and word-level diarization
+# AudioTranscriber — Android, локальная транскрибация и диаризация
 
-## Pipeline (v1.4)
+Android-приложение для локальной обработки аудиозаписей. Распознавание и определение говорящих выполняются на телефоне. Для diarization/denoising используется sherpa-onnx 2.0.1 — та же версия, что и в финальном ноутбуке.
 
-1. **GigaAM v3 RNN-T** recognizes Russian speech and returns approximate word timestamps. The recognition implementation and original model ZIP are unchanged.
-2. **ECAPA-TDNN** extracts acoustic speaker vectors over overlapping **2-second audio windows (0.5-second stride)**. A voice clustering stage produces speaker prototypes. Each GigaAM word gets ranked voice candidates by comparing its surrounding windows to those prototypes. An isolated short word is **not** enough for a reliable voice embedding.
-3. **AcousticWordResolver** calculates a deterministic word-level speaker sequence. It discourages unlikely single-word flips and serves as a fallback when the LLM cannot run.
-4. **Qwen3 0.6B Q4_K_M** runs locally on Android via llama.cpp. It receives time-stamped words, voice candidates and relative scores. It proposes speaker labels for 32 words at a time with 5 neighboring context words on each side. A safety gate disallows nonexistent speakers, weak candidates and changes contradicting strong audio evidence. If a model fails or outputs invalid JSON, the acoustic result remains.
-5. Final word labels are merged back into the application's usual transcript segments and saved.
+## ML pipeline
 
-**Voice weights are not calibrated probabilities.** They are softmax-normalized cosine similarities; `acoustic_reliability` is also a heuristic.
+### 1. Распознавание речи
 
-## Installation
+- **GigaAM v3 E2E RNNT**.
+- Частота: 16 kHz, mono; декодирование включает потоковый polyphase FIR ресемплинг с Kaiser-окном (вместо линейной интерполяции).
+- Обработка фрагментами по 24 секунды с шагом 23 секунды.
+- GigaAM всегда получает оригинальную аудиодорожку.
+- Слова и их временные метки извлекаются из RNNT-токенов.
 
-- Android Studio with **Gradle JDK 21**, Android SDK 35, arm64 Android phone (API 26+).
-- Build: `./gradlew :app:assembleDebug :app:testDebugUnitTest`.
-- Gradle downloads ECAPA ONNX and Qwen3 GGUF on the **build machine**. Qwen GGUF is pinned by SHA-256 to `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a`. The model increases APK size by roughly **397 MB**.
-- The phone does not download LLM weights or send audio/text to any server. The app still does not require INTERNET permission.
-- Existing installed GigaAM weights and recorded files remain unchanged by a normal in-place app update. If GigaAM isn't installed, import the original Colab model ZIP or all seven `android_models.partXX` files as before.
-- On the first processing run, Android copies bundled ECAPA and Qwen3 to its private data directory. Leave sufficient free space (multiple GB including previous models and APK). Stages are run serially to reduce simultaneous RAM usage.
+### 2. Диаризация
 
-## Word-by-word diagnostics
+Используется та же конфигурация, что и в `AudioTranscriber_Final_ML_Pipeline_v1_fixed.ipynb`:
 
-The normal exported `transcript` segments remain compatible. JSON export also includes `word_metadata`, with every original GigaAM word's:
-- index, word text and start/end timestamps;
-- candidate speakers, cosine similarities and normalized relative scores;
-- acoustic reliability, selected final speaker ID and `changed_by_llm` flag.
+| Компонент | Конфигурация |
+|---|---|
+| Segmentation | Reverb v1 |
+| Speaker embeddings | 3D-Speaker ERes2NetV2 |
+| Clustering | FastClustering |
+| Число говорящих | Автоматически (`-1`) |
+| Threshold | `0.63` |
+| Window shift ratio | `0.1` |
+| Minimum duration on | `0.3 s` |
+| Minimum duration off | `0.5 s` |
 
-Saved transcripts preserve this information; old transcripts without it still open.
+### 3. Аудиопредобработка для диаризации
 
-## Limitations and validation
+В приложении можно выбрать один из трёх вариантов:
 
-- Word-level scores are derived from overlapping audio context windows, **not** embeddings computed from single syllables. Rapid interruptions and simultaneous speech may contaminate the windows.
-- LLM does not hear voices, cannot identify a real person by name, and cannot prove whose utterance was spoken. It uses semantics only to resolve ambiguous candidate assignments.
-- The automatic clustering cutoff is heuristic (0.64 cosine similarity); for many speakers the discovery stage caps at six voices. This can merge genuinely different participants, so evaluate accuracy on representative recordings.
-- LLM receives *local* chunks, not the entire long transcript in one prompt. On low-RAM devices it may fail and the app keeps the acoustic fallback.
-- Word timestamps from GigaAM are approximate. Evaluate diarization error rate, speed, memory and JSON outputs on real audio and a physical phone.
-- Build and actual end-to-end runtime quality are not yet verified; the initial implementation is experimental.
+1. **Original** — исходная дорожка без обработки.
+2. **DPDFNet mild** — DPDFNet2, ограничение подавления 12 dB.
+3. **DPDFNet + gentle compressor** — DPDFNet2 и мягкий компрессор.
 
-## Model sources and licenses
+Компрессор использует параметры ноутбука: threshold -30 dB, ratio 2:1, максимальное усиление 4 dB, attack 10 ms, release 150 ms.
 
-- ASR: `salute-developers/GigaAM` (existing model ZIP).
-- ECAPA: `kenrunio/transcriber-speaker-onnx`, SpeechBrain ECAPA ONNX.
-- Qwen: https://huggingface.co/unsloth/Qwen3-0.6B-GGUF, `Qwen3-0.6B-Q4_K_M.gguf` (Apache-2.0). Download pinned by file SHA rather than a mutable release tag.
-- Android LLM runtime: `dev.ffmpegkit-maintained:llama-android:0.1.1` (prebuilt arm64 llama.cpp AAR, MIT).
+Обработка применяется только к копии аудио для диаризации. Исходная дорожка не изменяется, а GigaAM всегда работает на оригинале.
 
-No application-layer network API or server inference is involved.
+В приложении нет эталонных RTTM для пользовательских записей, поэтому оно не может автоматически вычислить DER/JER и выбрать лучший вариант предобработки. По умолчанию выбран Original; варианты можно сравнивать на своих записях.
+
+### 4. Сопоставление слов с говорящими
+
+- Для каждого слова вычисляется доля временного пересечения с интервалами каждого говорящего.
+- Сохраняется исходное назначение `speaker_raw`.
+- Внутри коротких речевых групп применяется Viterbi-сглаживание с penalty `0.7`.
+- Минимальное пересечение: `0.15`.
+- Группы разделяются при паузе более `0.8 s` или после конца предложения.
+- Слова без достаточного пересечения остаются `speaker_unknown`.
+- Реплики объединяются при одинаковом говорящем и паузе не более `0.9 s`.
+
+Экспорт JSON содержит список участников, реплики, слова, исходные и сглаженные метки говорящих, confidence и параметры pipeline.
+
+## Установка
+
+Требования для сборки:
+
+- Android Studio;
+- Gradle JDK 21;
+- Android SDK 35;
+- Android-телефон arm64, API 26+.
+
+Сборка и unit-тесты:
+
+```bash
+./gradlew :app:assembleDebug :app:testDebugUnitTest
+```
+
+### Установка весов
+
+1. Откройте приложение.
+2. Импортируйте существующий ZIP с GigaAM или все семь файлов `android_models.part01 … android_models.part07`. Старый архив подходит: если внутри остались Pyannote/Titanet, приложение просто не использует эти лишние файлы.
+3. При первом запуске приложение один раз загрузит дополнительные модели:
+   - Reverb v1;
+   - 3D-Speaker ERes2NetV2;
+   - DPDFNet2 (если выбран один из режимов DPDFNet).
+4. После загрузки эти файлы остаются в приватном хранилище приложения. Повторная загрузка не нужна.
+
+Для первичной загрузки дополнительных весов требуется Интернет. **Само аудио, текст и результаты обработки не отправляются на сервер**; инференс выполняется локально. Для скачивания моделей приложению выдано разрешение INTERNET.
+
+## Модели и лицензии
+
+- GigaAM v3: [Salute Developers / GigaAM](https://github.com/salute-developers/GigaAM).
+- Reverb v1: [sherpa-onnx model](https://github.com/k2-fsa/sherpa-onnx) и [Revai/reverb-diarization-v1](https://huggingface.co/Revai/reverb-diarization-v1). Модель распространяется по **Rev Model Non-Production License**: допускаются личное некоммерческое использование, тестирование, исследования и оценка в непроизводственной среде. Использование в production, коммерческих операциях или приложении/сервисе для конечных пользователей этой лицензией не разрешено. Ограничения распространяются и на результаты модели. Для production/commercial использования нужна отдельная лицензия Rev. Приложение сохраняет рядом с весами файл LICENSE и обязательный NOTICE.
+- ERes2NetV2: [3D-Speaker](https://github.com/alibaba-damo-academy/3D-Speaker), ONNX-файл из релиза sherpa-onnx.
+- DPDFNet2: [sherpa-onnx speech enhancement models](https://github.com/k2-fsa/sherpa-onnx).
+
+Перед коммерческим распространением необходимо отдельно проверить лицензии всех используемых весов.
+
+## Ограничения
+
+- Параметры диаризации взяты из benchmark на 10 синтетических русскоязычных записях с RTTM. Это не гарантия такой же точности на реальных совещаниях.
+- В текущем приложении нет эталонной разметки, поэтому DER/JER на пользовательской записи не вычисляются.
+- Gentle compressor выравнивает общий mono-микс и не может отдельно усилить тихого участника.
+- Одновременная речь, сильное эхо, короткие реплики и шум могут приводить к ошибкам кластеризации.
+- Speaker Enrollment и сопоставление голосов с заранее известными участниками пока не реализованы.
+- Временные метки слов приблизительные; качество нужно проверять на физических устройствах и реальных записях.
+

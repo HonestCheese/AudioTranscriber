@@ -53,8 +53,11 @@ fun TranscriptScreen(
             Text(transcript.fileName, color = AppTextMuted, style = MaterialTheme.typography.bodyMedium)
         }
         Text(
-            if (transcript.engine == "legacy-demo") "Демонстрационная запись из прежней версии"
-            else "Локальная расшифровка · время слов приблизительное",
+            if (transcript.engine != "gigaam-v3-reverb-eres2netv2-dpdfnet2") {
+                "Расшифровка предыдущей версии ML"
+            } else {
+                "GigaAM v3 · Reverb + ERes2NetV2 · ${transcript.diarizationAudioVariant}"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = AppAccent
         )
@@ -69,7 +72,8 @@ fun TranscriptScreen(
                     TimingRow("Подготовка аудио", timings.audioDecodeMs)
                     TimingRow("Mel-признаки", timings.melFeaturesMs)
                     TimingRow("GigaAM · распознавание", timings.gigaamMs)
-                    TimingRow("Pyannote + Titanet · диаризация", timings.diarizationMs)
+                    TimingRow("Предобработка аудио", timings.preprocessingMs)
+                    TimingRow("Reverb + ERes2NetV2 · диаризация", timings.diarizationMs)
                     TimingRow("Объединение реплик", timings.mergeMs)
                     TimingRow("Сохранение результата", timings.saveMs)
             }

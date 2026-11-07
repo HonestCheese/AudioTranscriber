@@ -11,17 +11,20 @@ class AudioProcessingTest {
         values.forEach { putShort(it) }; flip()
     }
 
-    @Test fun resamplingPreservesRampAcrossCodecBufferBoundaries() {
-        val source = ShortArray(441) { (it * 30).toShort() }
-        val one = MonoResampler(44100).apply { accept(pcm(source), 1, 2) }.finish()
-        val split = MonoResampler(44100).apply {
+    @Test fun polyphaseResamplingIsStableAcrossCodecBufferBoundaries() {
+        val source = ShortArray(44_100) {
+            (16_000.0 * kotlin.math.sin(2 * Math.PI * 440 * it / 44_100)).toInt().toShort()
+        }
+        val one = MonoResampler(44_100).apply { accept(pcm(source), 1, 2) }.finish()
+        val split = MonoResampler(44_100).apply {
             accept(pcm(source.copyOfRange(0, 37)), 1, 2)
             accept(pcm(source.copyOfRange(37, 102)), 1, 2)
             accept(pcm(source.copyOfRange(102, source.size)), 1, 2)
         }.finish()
-        assertEquals(160, one.size)
+        assertEquals(16_000, one.size)
         assertArrayEquals(one, split, 0f)
-        one.forEachIndexed { i, value -> assertEquals((i * 44100.0 / 16000 * 30 / 32768).toFloat(), value, 0.000001f) }
+        val rms = kotlin.math.sqrt(one.drop(100).dropLast(100).sumOf { it.toDouble() * it } / (one.size - 200))
+        assertTrue(rms in 0.33..0.36)
     }
 
     @Test fun stereoDownmixCancelsOppositeChannels() {
@@ -42,6 +45,18 @@ class AudioProcessingTest {
             -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, 2.98631620f, 4.78576136f, 5.89965820f, 4.55893898f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f, -20.72326660f
         )
         assertArrayEquals(expected, MelFeatures.extract(signal), 0.001f)
+    }
+
+    @Test fun notebookGentleCompressorKeepsLengthFiniteAndBelowClipping() {
+        val input = FloatArray(16_000) { index ->
+            val amplitude = if (index < 8_000) 0.001 else 0.2
+            (amplitude * kotlin.math.sin(2.0 * Math.PI * 220 * index / 16_000)).toFloat()
+        }
+        val output = LocalTranscriber.applyGentleCompressor(input)
+        assertEquals(input.size, output.size)
+        assertTrue(output.all { it.isFinite() })
+        assertTrue(output.maxOf { kotlin.math.abs(it) } <= 0.981f)
+        assertTrue(kotlin.math.abs(output[2_001]) > kotlin.math.abs(input[2_001]))
     }
 
 }

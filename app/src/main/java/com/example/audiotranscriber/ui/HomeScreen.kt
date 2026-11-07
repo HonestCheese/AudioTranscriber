@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.audiotranscriber.data.SavedTranscript
 import com.example.audiotranscriber.model.formatAudioTime
+import com.example.audiotranscriber.ml.DiarizationAudioVariant
 
 @Composable
 fun HomeScreen(
@@ -33,6 +34,8 @@ fun HomeScreen(
     isProcessing: Boolean,
     modelsReady: Boolean,
     onInstallModels: () -> Unit,
+    audioVariant: DiarizationAudioVariant,
+    onAudioVariantChange: (DiarizationAudioVariant) -> Unit,
     onCancel: () -> Unit,
     transcript: SavedTranscript?,
     onSaveNames: (Map<Int, String>) -> Unit,
@@ -219,7 +222,7 @@ fun HomeScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Модели не установлены", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Установите локальные ML-модели, чтобы обрабатывать аудио прямо на телефоне.",
+                        "Импортируйте архив GigaAM. Reverb и ERes2NetV2, а при необходимости DPDFNet2, загрузятся один раз при первом запуске.",
                         color = AppTextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -230,6 +233,50 @@ fun HomeScreen(
                         shape = RoundedCornerShape(14.dp)
                     ) { Text("Установить модели") }
                 }
+            }
+        }
+
+        AppPanel {
+            var variantMenuExpanded by remember { mutableStateOf(false) }
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                AppEyebrow("АУДИО ДЛЯ ДИАРИЗАЦИИ")
+                Box(Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { variantMenuExpanded = true },
+                        enabled = !isProcessing,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(audioVariant.label)
+                            Text("⌄", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = variantMenuExpanded,
+                        onDismissRequest = { variantMenuExpanded = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        DiarizationAudioVariant.values().forEach { variant ->
+                            DropdownMenuItem(
+                                text = { Text(variant.label) },
+                                onClick = {
+                                    onAudioVariantChange(variant)
+                                    variantMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "GigaAM всегда получает оригинал. Этот вариант влияет только на Reverb + ERes2NetV2.",
+                    color = AppTextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
 
@@ -290,7 +337,7 @@ fun HomeScreen(
         }
 
         Text(
-            "Обработка выполняется локально на устройстве. Аудиозаписи не отправляются на сервер.",
+            "Дополнительные веса загружаются один раз при первом запуске. Аудио и результаты обрабатываются локально и не отправляются на сервер.",
             style = MaterialTheme.typography.bodySmall,
             color = AppTextMuted
         )
