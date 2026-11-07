@@ -7,7 +7,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 
 /**
@@ -65,12 +64,15 @@ internal object ContextSpeakerResolver {
                 config = LlamaConfig(contextSize = 2048, threads = cpuThreads)
             )
             try {
-                for (batch in reviewIndices.chunked(CHUNK_WORDS)) {
+                for (windowStart in words.indices step CHUNK_WORDS) {
                     currentCoroutineContext().ensureActive()
+                    val windowEnd = (windowStart + CHUNK_WORDS).coerceAtMost(words.size)
+                    val batch = reviewIndices.filter { it in windowStart until windowEnd }
+                    if (batch.isEmpty()) continue
 
                     val raw = Llama.complete(
                         model,
-                        prompt = prompt(words, ids, batch),
+                        prompt(words, ids, batch, windowStart, windowEnd),
                         systemPrompt = "Ты исправляешь только неоднозначные метки говорящих. " +
                             "Акустические оценки важнее смысла. Для каждого целевого слова выбирай " +
                             "только одного из двух предложенных акустических кандидатов; не создавай " +
@@ -110,17 +112,16 @@ internal object ContextSpeakerResolver {
     private fun prompt(
         words: List<WordSpeakerEvidence>,
         current: IntArray,
-        targets: List<Int>
+        targets: List<Int>,
+        windowStart: Int,
+        windowEnd: Int
     ): String {
-        val contextIndices = sortedSetOf<Int>()
-        for (target in targets) {
-            for (index in (target - CONTEXT).coerceAtLeast(0)..(target + CONTEXT).coerceAtMost(words.lastIndex)) {
-                contextIndices.add(index)
-            }
-        }
+        val contextStart = (windowStart - CONTEXT).coerceAtLeast(0)
+        val contextEnd = (windowEnd + CONTEXT).coerceAtMost(words.size)
+        val contextIndices = contextStart until contextEnd
 
         val targetJson = JSONArray()
-        targets.forEach(targetJson::put)
+        targets.forEach { targetJson.put(it) }
 
         // Compact rows: [index, word, start_ms, current_id, [[candidate_id, score], ...], reliability]
         val rows = JSONArray()
