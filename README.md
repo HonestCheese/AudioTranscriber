@@ -101,3 +101,15 @@ Stage 01 в Colab использует sherpa-onnx 2.0.1; Android сохраня
 - GigaAM и старый ZIP остаются без изменений. TitaNet из ZIP пока нужен для совместимости старого манифеста установки, но при обработке говорящих более не вызывается.
 - На запуске ECAPA один раз копируется во внутреннее хранилище, затем используется локально через ONNX Runtime; сетевой доступ на телефоне не требуется.
 - **Важно:** эта версия не использует Reverb для segmentation. Границы говорящих приблизительны, так как используются фиксированные окна. Проверка на реальном Android-телефоне обязательна; сборка и качество здесь не проверены.
+
+## Correction: speaker over-segmentation
+
+Speaker clustering is now offline (agglomerative cosine similarity) instead of greedy
+first-match assignment. Similar fragments can merge even after being assigned
+separate provisional speakers. Automatic clustering uses a **0.64 cosine similarity**
+starting threshold, not the old sherpa/Reverb 0.95 distance setting. Isolated
+one-window clusters are attached to the nearest established cluster on sufficiently
+long recordings (6+ embedding windows). An explicit speaker count, if provided
+by the caller, takes precedence over the automatic threshold. The GigaAM ASR
+pipeline is unchanged. These parameters are initial heuristics, **not calibrated
+accuracy guarantees**. Reprocess existing recordings to generate new speaker IDs.
