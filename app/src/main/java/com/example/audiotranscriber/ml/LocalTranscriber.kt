@@ -84,13 +84,21 @@ object LocalTranscriber {
             report("Qwen3: проверка $qwenReviewCount неоднозначных слов…")
         }
         val contextStarted = System.nanoTime()
-        val resolved = try {
-            ContextSpeakerResolver.resolve(evidence, ModelInstaller.prepareQwen(context))
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (e: Exception) {
-            ContextSpeakerResolver.Resolution(AcousticWordResolver.resolve(evidence),
-                false, e.message)
+        val resolved = if (qwenReviewCount < 8) {
+            // Do not even copy/load the 0.6B GGUF when acoustic evidence is clear.
+            ContextSpeakerResolver.Resolution(AcousticWordResolver.resolve(evidence), false)
+        } else {
+            try {
+                ContextSpeakerResolver.resolve(evidence, ModelInstaller.prepareQwen(context))
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (e: Exception) {
+                ContextSpeakerResolver.Resolution(
+                    AcousticWordResolver.resolve(evidence),
+                    false,
+                    e.message
+                )
+            }
         }
         val contextLlmMs = elapsedMs(contextStarted)
         if (resolved.warning != null) report("Qwen недоступна — используем ECAPA")
