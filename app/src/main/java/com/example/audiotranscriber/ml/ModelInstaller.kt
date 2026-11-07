@@ -42,6 +42,38 @@ object ModelInstaller {
         } finally { temporary.delete() }
     }
 
+    /** The pinned GGUF is bundled in APK assets, with no phone-side download. */
+    suspend fun prepareQwen(context: Context): File = withContext(Dispatchers.IO) {
+        val destination = File(context.noBackupFilesDir, "qwen3-0.6b-q4km-v1.gguf")
+        val digestExpected = "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a"
+        if (destination.isFile && destination.length() > 300L * 1024 * 1024) {
+            return@withContext destination
+        }
+        val temporary = File(context.noBackupFilesDir, "qwen3-installing.tmp")
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            context.assets.open("llm/qwen3-0.6b-q4km.gguf").use { input ->
+                temporary.outputStream().use { output ->
+                    val buffer = ByteArray(128 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        output.write(buffer, 0, n)
+                        digest.update(buffer, 0, n)
+                    }
+                }
+            }
+            val checksum = digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+            check(temporary.length() > 300L * 1024 * 1024 && checksum == digestExpected) {
+                "Встроенная Qwen3 повреждена. Переустановите APK."
+            }
+            if (destination.exists()) destination.delete()
+            check(temporary.renameTo(destination)) { "Не удалось установить Qwen3" }
+            destination
+        } finally { temporary.delete() }
+    }
+
     suspend fun install(context: Context, uris: List<Uri>, progress: (String) -> Unit) = withContext(Dispatchers.IO) {
         require(uris.isNotEmpty()) { "Выберите ZIP или все семь частей" }
         fun displayName(uri: Uri): String = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {

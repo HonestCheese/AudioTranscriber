@@ -14,7 +14,11 @@ import kotlin.math.*
 
 /** Local GigaAM ASR with ECAPA-TDNN speaker embeddings and cosine clustering. */
 object LocalTranscriber {
-    data class TranscriptionOutput(val segments: List<TranscriptSegment>, val timings: ProcessingTimings)
+    data class TranscriptionOutput(
+        val segments: List<TranscriptSegment>,
+        val timings: ProcessingTimings,
+        val words: List<com.example.audiotranscriber.model.WordSpeakerEvidence>
+    )
     private data class Word(val text: String, val start: Double, val end: Double)
     private data class RecognitionResult(val words: List<Word>, val melMs: Long, val inferenceMs: Long)
 
@@ -65,20 +69,36 @@ object LocalTranscriber {
         report("Определение говорящих…")
         ensureActive()
         val diarizationStarted = System.nanoTime()
-        val diarization = EcapaDiarizer.diarize(audio, ecapa, speakerCount) {
-            ensureActive()
-        }
+        val sortedWords = words.sortedWith(compareBy<Word> { it.start }.thenBy { it.end })
+        val evidence = EcapaDiarizer.scoreWords(
+            audio, ecapa,
+            sortedWords.map { EcapaDiarizer.WordSpan(it.text, it.start, it.end) },
+            speakerCount
+        ) { ensureActive() }
         ensureActive()
         val diarizationMs = elapsedMs(diarizationStarted)
+        report("Контекстная проверка слов · Qwen3…")
+        val contextStarted = System.nanoTime()
+        val resolved = try {
+            ContextSpeakerResolver.resolve(evidence, ModelInstaller.prepareQwen(context))
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (e: Exception) {
+            ContextSpeakerResolver.Resolution(AcousticWordResolver.resolve(evidence),
+                false, e.message)
+        }
+        val contextLlmMs = elapsedMs(contextStarted)
+        if (resolved.warning != null) report("Qwen недоступна — используем ECAPA")
         report("Сохранение реплик…")
         val mergeStarted = System.nanoTime()
         val merged = mutableListOf<TranscriptSegment>()
-        val speakers = Stage01Speakers(diarization.map {
-            Stage01Speakers.Interval(it.start, it.end, it.speaker)
-        })
-        for (w in words.sortedWith(compareBy<Word> { it.start }.thenBy { it.end })) {
-            val mid = (w.start + w.end) / 2
-            val speaker = speakers.speakerAt(mid)
+        val initialLabels = AcousticWordResolver.resolve(evidence)
+        val wordEvidence = evidence.mapIndexed { i, word ->
+            val selected = resolved.ids.getOrElse(i) { -1 }
+            word.copy(selectedSpeakerId = selected, changedByLlm = selected != initialLabels[i])
+        }
+        for ((index, w) in sortedWords.withIndex()) {
+            val speaker = wordEvidence[index].selectedSpeakerId
             val segment = TranscriptSegment(speaker, (w.start * 1000).roundToInt(), (w.end * 1000).roundToInt(), w.text)
             val previous = merged.lastOrNull()
             if (previous != null && previous.speakerId == speaker && segment.startMs - previous.endMs <= 1000) {
@@ -89,11 +109,13 @@ object LocalTranscriber {
         val mergeMs = elapsedMs(mergeStarted)
         TranscriptionOutput(
             segments = merged,
+            words = wordEvidence,
             timings = ProcessingTimings(
                 audioDecodeMs = audioDecodeMs,
                 melFeaturesMs = melMs,
                 gigaamMs = gigaamMs,
                 diarizationMs = diarizationMs,
+                contextLlmMs = contextLlmMs,
                 mergeMs = mergeMs,
                 saveMs = 0L,
                 totalMs = elapsedMs(totalStarted)

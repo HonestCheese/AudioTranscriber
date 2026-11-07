@@ -64,6 +64,8 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 val transcriptName = "${timestamp}_transcript"
                 val initial = SavedTranscript(
                     id, transcriptName, uri.toString(), segments, names,
+                    engine = "gigaam-v3-ecapa-qwen3-word",
+                    wordEvidence = output.words,
                     processingTimings = output.timings
                 )
                 val store = TranscriptStore(app)

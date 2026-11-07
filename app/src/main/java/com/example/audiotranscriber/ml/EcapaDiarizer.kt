@@ -3,8 +3,12 @@ package com.example.audiotranscriber.ml
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import com.example.audiotranscriber.model.WordSpeakerEvidence
+import com.example.audiotranscriber.model.VoiceCandidate
 import java.io.File
 import java.nio.FloatBuffer
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -68,6 +72,130 @@ internal object EcapaDiarizer {
                     if (to > from) intervals.add(Interval(from.toDouble() / RATE, to.toDouble() / RATE, labels[i]))
                 }
                 return intervals
+            }
+        }
+    }
+
+
+    data class WordSpan(val text: String, val start: Double, val end: Double)
+    private data class AcousticWindow(val start: Double, val end: Double, val embedding: FloatArray)
+
+    /**
+     * Return relative voice similarities for EACH GigaAM word.
+     * ECAPA is evaluated on 2-second context windows (500-ms hop), never on
+     * an isolated short word. These are not calibrated speaker probabilities.
+     */
+    fun scoreWords(
+        audio: FloatArray,
+        model: File,
+        words: List<WordSpan>,
+        requestedSpeakers: Int,
+        checkCancelled: () -> Unit
+    ): List<WordSpeakerEvidence> {
+        if (words.isEmpty()) return emptyList()
+        val frames = mutableListOf<AcousticWindow>()
+        val env = OrtEnvironment.getEnvironment()
+        OrtSession.SessionOptions().use { options ->
+            options.setIntraOpNumThreads(2)
+            options.setInterOpNumThreads(1)
+            env.createSession(model.path, options).use { session ->
+                var start = 0
+                while (start < audio.size) {
+                    checkCancelled()
+                    val end = min(start + WINDOW_SAMPLES, audio.size)
+                    val valid = end - start
+                    if (valid < RATE / 2) break
+                    val clip = FloatArray(WINDOW_SAMPLES)
+                    System.arraycopy(audio, start, clip, 0, valid)
+                    var energy = 0.0
+                    for (i in 0 until valid) energy += clip[i].toDouble() * clip[i]
+                    if (sqrt(energy / valid) > 0.003) {
+                        frames += AcousticWindow(
+                            start.toDouble() / RATE,
+                            end.toDouble() / RATE,
+                            embed(session, env, clip, valid.toFloat() / WINDOW_SAMPLES)
+                        )
+                    }
+                    if (end == audio.size) break
+                    start += RATE / 2
+                }
+            }
+        }
+        fun empty(index: Int, word: WordSpan) =
+            WordSpeakerEvidence(index, word.text, (word.start * 1000).toInt(),
+                (word.end * 1000).toInt(), emptyList(), 0f, -1)
+        if (frames.isEmpty()) return words.mapIndexed(::empty)
+
+        // Previous exhaustive hierarchical clustering was cubic in recording length.
+        // Build speaker prototypes from at most 160 evenly spaced windows.
+        val selected = if (frames.size <= 72) frames.indices.toList()
+            else (0 until 72).map { it * (frames.lastIndex) / 71 }.distinct()
+        val sample = selected.map { frames[it].embedding }
+        var clusterIds = cluster(sample, requestedSpeakers)
+        if (requestedSpeakers == -1 && clusterIds.toSet().size > 6) {
+            clusterIds = cluster(sample, 6)
+        }
+        val count = (clusterIds.maxOrNull() ?: 0) + 1
+        val prototypes = Array(count) { FloatArray(sample[0].size) }
+        for (j in sample.indices) {
+            val sum = prototypes[clusterIds[j]]
+            for (k in sum.indices) sum[k] += sample[j][k]
+        }
+        fun normalize(vec: FloatArray) {
+            val n = sqrt(vec.sumOf { it.toDouble() * it }).coerceAtLeast(1e-8)
+            for (j in vec.indices) vec[j] = (vec[j] / n).toFloat()
+        }
+        prototypes.forEach(::normalize)
+        fun cosine(a: FloatArray, b: FloatArray): Double {
+            var score = 0.0
+            for (j in a.indices) score += a[j].toDouble() * b[j]
+            return score
+        }
+
+        // Refine once using every frame to reduce the sampling bias.
+        val sums = Array(count) { FloatArray(sample[0].size) }
+        for (frame in frames) {
+            checkCancelled()
+            val id = prototypes.indices.maxByOrNull { cosine(frame.embedding, prototypes[it]) } ?: 0
+            for (j in frame.embedding.indices) sums[id][j] += frame.embedding[j]
+        }
+        for (i in prototypes.indices) {
+            if (sums[i].any { it != 0f }) {
+                normalize(sums[i])
+                prototypes[i] = sums[i]
+            }
+        }
+
+        return words.mapIndexed { index, word ->
+            checkCancelled()
+            val mid = (word.start + word.end) / 2
+            val local = frames.filter { mid >= it.start && mid <= it.end }
+            if (local.isEmpty()) empty(index, word)
+            else {
+                val similarities = DoubleArray(count)
+                var weightSum = 0.0
+                for (frame in local) {
+                    val center = (frame.start + frame.end) / 2
+                    val weight = (1.0 - abs(mid - center) / 1.25).coerceAtLeast(0.1)
+                    weightSum += weight
+                    for (j in similarities.indices) {
+                        similarities[j] += weight * cosine(frame.embedding, prototypes[j])
+                    }
+                }
+                for (j in similarities.indices) similarities[j] /= weightSum
+                val peak = similarities.maxOrNull() ?: 0.0
+                val weightList = similarities.map { exp(((it - peak) / 0.12).coerceAtLeast(-30.0)) }
+                val weightTotal = weightList.sum().coerceAtLeast(1e-8)
+                val candidates = similarities.indices.map { j ->
+                    VoiceCandidate(j, similarities[j].toFloat(),
+                        (weightList[j] / weightTotal).toFloat())
+                }.sortedByDescending { it.relativeScore }
+                val margin = if (candidates.size > 1)
+                    candidates[0].relativeScore - candidates[1].relativeScore else 1f
+                val shortWordPenalty = ((word.end - word.start) / 0.5).toFloat().coerceIn(0.15f, 1f)
+                WordSpeakerEvidence(index, word.text, (word.start * 1000).toInt(),
+                    (word.end * 1000).toInt(), candidates,
+                    (margin * shortWordPenalty).coerceIn(0f, 1f), -1)
             }
         }
     }

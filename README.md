@@ -1,115 +1,47 @@
-# AudioTranscriber — локальное распознавание на Android
+# AudioTranscriber — Android, offline ASR and word-level diarization
 
-Локальная обработка GigaAM v3 RNN-T для слов и **ECAPA-TDNN (SpeechBrain)** для голосов.\nECAPA загружается при сборке APK и включается в его assets. Обработка на телефоне работает без интернета.\n\n**Экспериментальный режим:** диаризация основана на двухсекундных окнах, перекрытии 1 секунду и косинусной кластеризации (порог 0.72), а не на прежней сегментации Reverb и TitaNet. На коротких репликах, паузах и перебиваниях возможны ошибки. Параметр 0.95 старой кластеризации НЕ переносится как косинусный порог.
+## Pipeline (v1.4)
 
-## Запуск через Android Studio
+1. **GigaAM v3 RNN-T** recognizes Russian speech and returns approximate word timestamps. The recognition implementation and original model ZIP are unchanged.
+2. **ECAPA-TDNN** extracts acoustic speaker vectors over overlapping **2-second audio windows (0.5-second stride)**. A voice clustering stage produces speaker prototypes. Each GigaAM word gets ranked voice candidates by comparing its surrounding windows to those prototypes. An isolated short word is **not** enough for a reliable voice embedding.
+3. **AcousticWordResolver** calculates a deterministic word-level speaker sequence. It discourages unlikely single-word flips and serves as a fallback when the LLM cannot run.
+4. **Qwen3 0.6B Q4_K_M** runs locally on Android via llama.cpp. It receives time-stamped words, voice candidates and relative scores. It proposes speaker labels for 32 words at a time with 5 neighboring context words on each side. A safety gate disallows nonexistent speakers, weak candidates and changes contradicting strong audio evidence. If a model fails or outputs invalid JSON, the acoustic result remains.
+5. Final word labels are merged back into the application's usual transcript segments and saved.
 
-1. Откройте корень проекта (папку с `settings.gradle.kts`) в Android Studio.
-2. Используйте встроенную в Android Studio Java 21 (Settings → Build Tools → Gradle → Gradle JDK).
-   Gradle 8.11.1, Android Gradle Plugin 8.9.1, Kotlin 2.1.20, SDK 35;
-   Studio предложит установить недостающий SDK. Интернет нужен компьютеру
-   только для зависимостей при первой сборке.
-3. Подключите **физический телефон Android 8.0+ с arm64-v8a**, включите USB debugging
-   и нажмите **Run**. В этой конфигурации x86-эмулятор не поддерживается.
-4. Скопируйте на телефон ваш `android_export_1y60ruj__models.zip` (~546 МБ).
-   Если остались только части, скопируйте **все семь** файлов
-   `android_models.part01` … `android_models.part07`, не переименовывая их.
-5. На вкладке «Аудио» нажмите **«Установить модели»**. Выберите ZIP или выделите
-   сразу все семь частей долгим нажатием в системном файловом окне.
-   Приложение само соединяет части и проверяет размер и SHA-256 всех пяти ONNX.
-   Маленький `…_info.zip` для установки не подходит.
-6. Выберите или запишите аудио и нажмите **«Создать расшифровку»**.
-   Число участников определяется автоматически (`num_clusters=-1`, threshold=0.95).
-   Реплики с участниками и приблизительным временем сохраняются в «Обработке».
+**Voice weights are not calibrated probabilities.** They are softmax-normalized cosine similarities; `acoustic_reliability` is also a heuristic.
 
-Reverb FP32 (~9.1 МиБ) теперь входит в APK: Gradle скачивает официальный архив
-на компьютере/в GitHub Actions и проверяет SHA-256. При первой обработке модель
-копируется в хранилище приложения. Старый Pyannote из ZIP больше не используется.
-**Если большой ZIP уже установлен, достаточно обновить APK поверх приложения.**
-GigaAM и Titanet переэкспортировать и переустанавливать не нужно. Для новой установки
-старый ZIP по-прежнему подходит. Лицензия Reverb включена в assets/reverb/LICENSE.
+## Installation
 
-Установка моделей нужна один раз. Обновление приложения через Run сохраняет
-установленные модели, записи и расшифровки, если вы не удаляете приложение
-и не меняете ключ подписи. Модели хранятся в `noBackupFilesDir`, в резервную
-копию не попадают. Сборка приложения содержит код и словарь, а не 900 МБ весов;
-поэтому ZIP с исходниками GitHub сам по себе не содержит моделей.
+- Android Studio with **Gradle JDK 21**, Android SDK 35, arm64 Android phone (API 26+).
+- Build: `./gradlew :app:assembleDebug :app:testDebugUnitTest`.
+- Gradle downloads ECAPA ONNX and Qwen3 GGUF on the **build machine**. Qwen GGUF is pinned by SHA-256 to `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a`. The model increases APK size by roughly **397 MB**.
+- The phone does not download LLM weights or send audio/text to any server. The app still does not require INTERNET permission.
+- Existing installed GigaAM weights and recorded files remain unchanged by a normal in-place app update. If GigaAM isn't installed, import the original Colab model ZIP or all seven `android_models.partXX` files as before.
+- On the first processing run, Android copies bundled ECAPA and Qwen3 to its private data directory. Leave sufficient free space (multiple GB including previous models and APK). Stages are run serially to reduce simultaneous RAM usage.
 
-## Что реализовано
+## Word-by-word diagnostics
 
-- MediaExtractor / MediaCodec: декодирование поддерживаемых Android аудиоформатов,
-  стерео → моно, непрерывный ресемплинг в 16 кГц.
-- HTK log-mel: 64 полосы, периодическое окно Hann, FFT 320, шаг 160, без центрирования.
-- ONNX Runtime CPU: encoder / decoder / joint, greedy RNN-T, SentencePiece-словарь.
-- Вся запись обрабатывается окнами 24 секунды с перекрытием 1 секунды;
-  искусственного ограничения исходного ноутбука в 93 секунды нет.
-- Reverb + Titanet через sherpa-onnx: шаг окна 0.1, min_duration_on=0.3,
-  min_duration_off=0.5, автоматические кластеры с порогом 0.95.
-- Назначение говорящего по середине слова: интервал [start, end), при пересечении
-  выбирается ближайший центр. Вне интервалов — speaker_unknown, без подстановки
-  ближайшего голоса. Участники нумеруются по первому появлению, начиная с speaker_0.
-- Объединение слов при одинаковом говорящем и паузе не более 1 секунды.
-  Экспорт: transcript[] с speaker_id, start_ms, end_ms, text.
-- Индикатор этапов, отмена, запрет параллельных запусков; задача переживает
-  поворот экрана благодаря ViewModel. Старые деморасшифровки помечаются отдельно.
+The normal exported `transcript` segments remain compatible. JSON export also includes `word_metadata`, with every original GigaAM word's:
+- index, word text and start/end timestamps;
+- candidate speakers, cosine similarities and normalized relative scores;
+- acoustic reliability, selected final speaker ID and `changed_by_llm` flag.
 
-## Ограничения и проверка на телефоне
+Saved transcripts preserve this information; old transcripts without it still open.
 
-Первый экспорт — FP32, encoder около 845 МиБ. Для установки нужно примерно 1 ГБ
-свободного места **помимо** самого ZIP. На обработку потребуется заметно больше
-оперативной памяти; доступность и скорость зависят от телефона. Начните с
-10–20 секунд отчётливой русской речи, затем проверьте разговор двух людей.
-Квантизацию в этой версии не выполняем, исходные веса сохранены.
+## Limitations and validation
 
-Оставляйте приложение открытым до завершения: foreground service для длительной
-работы в фоне не реализован. Отмена проверяется между шагами GigaAM; запущенный
-вызов нативной диаризации завершается перед отменой. Время слов приблизительное,
-одновременная речь может определяться неточно. Декодированное аудио хранится
-в памяти: установлен явный предел 30 минут, длинные файлы нужно делить.
-При записи без распознаваемой речи выводится сообщение, демотекст не подставляется.
+- Word-level scores are derived from overlapping audio context windows, **not** embeddings computed from single syllables. Rapid interruptions and simultaneous speech may contaminate the windows.
+- LLM does not hear voices, cannot identify a real person by name, and cannot prove whose utterance was spoken. It uses semantics only to resolve ambiguous candidate assignments.
+- The automatic clustering cutoff is heuristic (0.64 cosine similarity); for many speakers the discovery stage caps at six voices. This can merge genuinely different participants, so evaluate accuracy on representative recordings.
+- LLM receives *local* chunks, not the entire long transcript in one prompt. On low-RAM devices it may fail and the app keeps the acoustic fallback.
+- Word timestamps from GigaAM are approximate. Evaluate diarization error rate, speed, memory and JSON outputs on real audio and a physical phone.
+- Build and actual end-to-end runtime quality are not yet verified; the initial implementation is experimental.
 
-## Проверки
+## Model sources and licenses
 
-```sh
-./gradlew :app:assembleDebug :app:testDebugUnitTest
-```
+- ASR: `salute-developers/GigaAM` (existing model ZIP).
+- ECAPA: `kenrunio/transcriber-speaker-onnx`, SpeechBrain ECAPA ONNX.
+- Qwen: https://huggingface.co/unsloth/Qwen3-0.6B-GGUF, `Qwen3-0.6B-Q4_K_M.gguf` (Apache-2.0). Download pinned by file SHA rather than a mutable release tag.
+- Android LLM runtime: `dev.ffmpegkit-maintained:llama-android:0.1.1` (prebuilt arm64 llama.cpp AAR, MIT).
 
-JVM-тесты проверяют непрерывность ресемплинга на границах PCM-буферов,
-стереомикширование и длину / логарифмический порог mel-признаков.
-Отдельно пять предоставленных ONNX были запущены на CPU: контракт
-encoder/decoder/joint и диаризация тишины. Это не заменяет проверку качества,
-памяти и скорости на физическом Android-телефоне.
-
-Модель GigaAM и экспорт: `salute-developers/GigaAM`, revision
-`7447938d791c4f3e643386ee22c33777004293a5`.
-Библиотеки: ONNX Runtime Android 1.23.2; sherpa-onnx 1.13.8 (AAR со статически
-связанным ONNX Runtime), JTransforms 3.1. AAR загружается Gradle из официального
-GitHub release. Условия использования моделей определяются их авторами:
-GigaAM, Reverb (non-commercial license), NVIDIA NeMo Titanet small.
-
-Stage 01 в Colab использует sherpa-onnx 2.0.1; Android сохраняет совместимый
-проверенный JNI/AAR 1.13.8. Численное совпадение результатов разных runtime не
-гарантируется. Временные метки GigaAM в Android остаются приближёнными.
-После перехода на окна 24 секунды нужно проверить расход памяти на телефоне.
-
-
-
-## ECAPA-TDNN (версия 1.3)
-
-- Источник весов: https://huggingface.co/kenrunio/transcriber-speaker-onnx — `ecapa-any-length.onnx`, SpeechBrain, Apache-2.0. ONNX ожидает `wav` float32 [1,N] и `lens` float32 [1], возвращает `emb` [1,1,192].
-- При сборке Gradle скачивает модель и добавляет в APK. **Перед выпуском следует зафиксировать ревизию и SHA-256 модели**, сейчас источник `main` и проверка только минимального размера. Для воспроизводимых релизов этого недостаточно.
-- GigaAM и старый ZIP остаются без изменений. TitaNet из ZIP пока нужен для совместимости старого манифеста установки, но при обработке говорящих более не вызывается.
-- На запуске ECAPA один раз копируется во внутреннее хранилище, затем используется локально через ONNX Runtime; сетевой доступ на телефоне не требуется.
-- **Важно:** эта версия не использует Reverb для segmentation. Границы говорящих приблизительны, так как используются фиксированные окна. Проверка на реальном Android-телефоне обязательна; сборка и качество здесь не проверены.
-
-## Correction: speaker over-segmentation
-
-Speaker clustering is now offline (agglomerative cosine similarity) instead of greedy
-first-match assignment. Similar fragments can merge even after being assigned
-separate provisional speakers. Automatic clustering uses a **0.64 cosine similarity**
-starting threshold, not the old sherpa/Reverb 0.95 distance setting. Isolated
-one-window clusters are attached to the nearest established cluster on sufficiently
-long recordings (6+ embedding windows). An explicit speaker count, if provided
-by the caller, takes precedence over the automatic threshold. The GigaAM ASR
-pipeline is unchanged. These parameters are initial heuristics, **not calibrated
-accuracy guarantees**. Reprocess existing recordings to generate new speaker IDs.
+No application-layer network API or server inference is involved.

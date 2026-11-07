@@ -2,6 +2,8 @@ package com.example.audiotranscriber.data
 
 import android.content.Context
 import com.example.audiotranscriber.model.TranscriptSegment
+import com.example.audiotranscriber.model.WordSpeakerEvidence
+import com.example.audiotranscriber.model.VoiceCandidate
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -13,7 +15,8 @@ data class ProcessingTimings(
     val diarizationMs: Long,
     val mergeMs: Long,
     val saveMs: Long = 0L,
-    val totalMs: Long
+    val totalMs: Long,
+    val contextLlmMs: Long = 0L
 )
 
 data class SavedTranscript(
@@ -23,7 +26,8 @@ data class SavedTranscript(
     val segments: List<TranscriptSegment>,
     val speakerNames: Map<Int, String>,
     val engine: String = "gigaam-v3-reverb-titanet-stage01",
-    val processingTimings: ProcessingTimings? = null
+    val processingTimings: ProcessingTimings? = null,
+    val wordEvidence: List<WordSpeakerEvidence> = emptyList()
 )
 
 class TranscriptStore(private val context: Context) {
@@ -59,6 +63,7 @@ class TranscriptStore(private val context: Context) {
                 .put("melFeaturesMs", timings.melFeaturesMs)
                 .put("gigaamMs", timings.gigaamMs)
                 .put("diarizationMs", timings.diarizationMs)
+                .put("contextLlmMs", timings.contextLlmMs)
                 .put("mergeMs", timings.mergeMs)
                 .put("saveMs", timings.saveMs)
                 .put("totalMs", timings.totalMs))
@@ -72,6 +77,7 @@ class TranscriptStore(private val context: Context) {
                 .put("startMs", it.startMs).put("endMs", it.endMs).put("text", it.text))
         }
         root.put("segments", segments)
+        root.put("wordEvidence", encodeEvidence(transcript.wordEvidence))
         val temp = File(folder, "${transcript.id}.tmp")
         temp.writeText(root.toString())
         val target = File(folder, "${transcript.id}.json")
@@ -113,7 +119,8 @@ class TranscriptStore(private val context: Context) {
                 .put("end_ms", segment.endMs)
                 .put("text", segment.text))
         }
-        return JSONObject().put("transcript", items).toString(2)
+        return JSONObject().put("transcript", items)
+            .put("word_metadata", encodeEvidence(transcript.wordEvidence)).toString(2)
     }
 
     fun delete(id: Long) {
@@ -145,12 +152,59 @@ class TranscriptStore(private val context: Context) {
                 melFeaturesMs = it.optLong("melFeaturesMs"),
                 gigaamMs = it.optLong("gigaamMs"),
                 diarizationMs = it.optLong("diarizationMs"),
+                contextLlmMs = it.optLong("contextLlmMs"),
                 mergeMs = it.optLong("mergeMs"),
                 saveMs = it.optLong("saveMs"),
                 totalMs = it.optLong("totalMs")
             )
         }
         return SavedTranscript(json.getLong("id"), json.getString("fileName"),
-            json.optString("audioUri"), segments, names, json.optString("engine", "legacy-demo"), timings)
+            json.optString("audioUri"), segments, names,
+            json.optString("engine", "legacy-demo"), timings,
+            decodeEvidence(json.optJSONArray("wordEvidence")))
+    }
+    private fun encodeEvidence(words: List<WordSpeakerEvidence>): JSONArray {
+        val array = JSONArray()
+        words.forEach { word ->
+            val candidates = JSONArray()
+            word.candidates.forEach { candidate ->
+                candidates.put(JSONObject()
+                    .put("speaker_id", candidate.speakerId)
+                    .put("cosine_similarity", candidate.cosineSimilarity.toDouble())
+                    .put("relative_score", candidate.relativeScore.toDouble()))
+            }
+            array.put(JSONObject()
+                .put("index", word.index)
+                .put("word", word.text)
+                .put("start_ms", word.startMs)
+                .put("end_ms", word.endMs)
+                .put("candidates", candidates)
+                .put("acoustic_reliability", word.acousticReliability.toDouble())
+                .put("speaker_id", word.selectedSpeakerId)
+                .put("changed_by_llm", word.changedByLlm))
+        }
+        return array
+    }
+
+    private fun decodeEvidence(array: JSONArray?): List<WordSpeakerEvidence> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            runCatching {
+                val item = array.getJSONObject(index)
+                val choices = item.optJSONArray("candidates") ?: JSONArray()
+                val candidates = (0 until choices.length()).map { j ->
+                    val c = choices.getJSONObject(j)
+                    VoiceCandidate(c.getInt("speaker_id"),
+                        c.optDouble("cosine_similarity").toFloat(),
+                        c.optDouble("relative_score").toFloat())
+                }
+                WordSpeakerEvidence(
+                    item.getInt("index"), item.getString("word"),
+                    item.getInt("start_ms"), item.getInt("end_ms"), candidates,
+                    item.optDouble("acoustic_reliability").toFloat(),
+                    item.optInt("speaker_id", -1), item.optBoolean("changed_by_llm")
+                )
+            }.getOrNull()
+        }
     }
 }
