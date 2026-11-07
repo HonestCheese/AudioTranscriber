@@ -25,7 +25,7 @@ data class SavedTranscript(
     val audioUri: String,
     val segments: List<TranscriptSegment>,
     val speakerNames: Map<Int, String>,
-    val engine: String = "gigaam-v3-reverb-titanet-stage01",
+    val engine: String = "gigaam-v3-pyannote3-titanet-hybrid",
     val processingTimings: ProcessingTimings? = null,
     val wordEvidence: List<WordSpeakerEvidence> = emptyList()
 )
