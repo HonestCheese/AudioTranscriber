@@ -22,7 +22,7 @@ data class SavedTranscript(
     val audioUri: String,
     val segments: List<TranscriptSegment>,
     val speakerNames: Map<Int, String>,
-    val engine: String = "gigaam-v3",
+    val engine: String = "gigaam-v3-reverb-titanet-stage01",
     val processingTimings: ProcessingTimings? = null
 )
 
@@ -106,7 +106,7 @@ class TranscriptStore(private val context: Context) {
     fun exportJson(transcript: SavedTranscript): String {
         val items = JSONArray()
         transcript.segments.forEach { segment ->
-            val speakerId = if (segment.speakerId < 0) "speaker_unknown" else "speaker_${segment.speakerId + 1}"
+            val speakerId = if (segment.speakerId < 0) "speaker_unknown" else "speaker_${segment.speakerId}"
             items.put(JSONObject()
                 .put("speaker_id", speakerId)
                 .put("start_ms", segment.startMs)

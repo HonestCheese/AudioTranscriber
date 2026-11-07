@@ -11,3 +11,4 @@ fun formatAudioTime(milliseconds: Int): String {
     val seconds = milliseconds.coerceAtLeast(0) / 1000
     return "%02d:%02d".format(seconds / 60, seconds % 60)
 }
+

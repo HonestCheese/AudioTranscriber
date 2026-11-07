@@ -13,7 +13,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import kotlin.math.*
 
-/** Local pipeline matching the supplied GigaAM + Titanet notebook. */
+/** Local pipeline matching the Stage 01 GigaAM + Reverb + Titanet notebook. */
 object LocalTranscriber {
     data class TranscriptionOutput(val segments: List<TranscriptSegment>, val timings: ProcessingTimings)
     private data class Word(val text: String, val start: Double, val end: Double)
@@ -26,6 +26,7 @@ object LocalTranscriber {
         suspend fun report(s: String) = withContext(Dispatchers.Main) { progress(s) }
         check(ModelInstaller.isReady(context)) { "Сначала установите модели из архива Colab" }
         val dir = ModelInstaller.directory(context)
+        val reverb = ModelInstaller.prepareReverb(context)
         report("Подготовка аудио…")
         val decodeStarted = System.nanoTime()
         val audio = AudioDecoder.decode(context, uri)
@@ -44,21 +45,21 @@ object LocalTranscriber {
             while (start < duration) {
                 ensureActive()
                 report("Распознавание: ${(100 * start / duration).toInt()}%")
-                val end = min(start + 12.0, duration)
+                val end = min(start + 24.0, duration)
                 val samples = audio.copyOfRange((start * 16000).toInt(), min(audio.size, (end * 16000).toInt()))
                 if (samples.size >= 320) {
-                    val next = start + 11.0 < duration
+                    val next = start + 23.0 < duration
                     val recognition = asr.recognize(samples)
                     melMs += recognition.melMs
                     gigaamMs += recognition.inferenceMs
                     for (w in recognition.words) {
                         val mid = (w.start + w.end) / 2 + start
                         if (start > 0 && mid < start + 0.5) continue
-                        if (next && mid >= start + 11.5) continue
+                        if (next && mid >= start + 23.5) continue
                         words += Word(w.text, w.start + start, min(w.end + start, duration))
                     }
                 }
-                start += 11.0
+                start += 23.0
             }
         } // Release GigaAM before allocating diarization models.
         require(words.isNotEmpty()) { "Речь не распознана. Попробуйте запись с отчётливой речью." }
@@ -68,7 +69,7 @@ object LocalTranscriber {
         val config = OfflineSpeakerDiarizationConfig(
             segmentation = OfflineSpeakerSegmentationModelConfig(
                 pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(
-                    model = File(dir, "diarization/segmentation.onnx").path,
+                    model = reverb.path,
                     windowShiftRatio = 0.1f
                 ), numThreads = 2
             ),
@@ -76,7 +77,7 @@ object LocalTranscriber {
                 model = File(dir, "diarization/titanet.onnx").path,
                 numThreads = 2
             ),
-            clustering = FastClusteringConfig(numClusters = speakerCount, threshold = 0.5f),
+            clustering = FastClusteringConfig(numClusters = speakerCount, threshold = 0.95f),
             minDurationOn = 0.3f, minDurationOff = 0.5f
         )
         val diarizer = OfflineSpeakerDiarization(config = config)
@@ -91,11 +92,12 @@ object LocalTranscriber {
         report("Сохранение реплик…")
         val mergeStarted = System.nanoTime()
         val merged = mutableListOf<TranscriptSegment>()
-        for (w in words) {
+        val speakers = Stage01Speakers(diarization.map {
+            Stage01Speakers.Interval(it.start.toDouble(), it.end.toDouble(), it.speaker)
+        })
+        for (w in words.sortedWith(compareBy<Word> { it.start }.thenBy { it.end })) {
             val mid = (w.start + w.end) / 2
-            val speaker = diarization.filter { mid >= it.start && mid <= it.end }
-                .maxByOrNull { it.end - it.start }?.speaker ?: diarization.minByOrNull { min(abs(mid - it.start), abs(mid - it.end)) }
-                    ?.takeIf { min(abs(mid - it.start), abs(mid - it.end)) <= 1.0 }?.speaker ?: -1
+            val speaker = speakers.speakerAt(mid)
             val segment = TranscriptSegment(speaker, (w.start * 1000).roundToInt(), (w.end * 1000).roundToInt(), w.text)
             val previous = merged.lastOrNull()
             if (previous != null && previous.speakerId == speaker && segment.startMs - previous.endMs <= 1000) {
@@ -208,3 +210,4 @@ object LocalTranscriber {
         override fun close() { sessions.asReversed().forEach { it.close() }; sessions.clear() }
     }
 }
+

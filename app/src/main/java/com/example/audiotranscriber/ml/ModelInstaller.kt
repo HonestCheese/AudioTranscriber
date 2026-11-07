@@ -26,6 +26,37 @@ object ModelInstaller {
         return expected.keys().asSequence().all { name -> File(dir, name).length() == expected.getJSONObject(name).getLong("size") }
     }
 
+    /** Reverb is bundled separately; the existing GigaAM/Titanet ZIP stays valid. */
+    suspend fun prepareReverb(context: Context): File = withContext(Dispatchers.IO) {
+        val target = File(context.noBackupFilesDir, "reverb-v1.onnx")
+        val expectedHash = "8249e2e323f8fb0566a387d94b40a73d0b75d54ee60d02dcd729a56a5ba8ecea"
+        fun hash(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(128 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+        }
+        if (target.length() == 9512223L && hash(target) == expectedHash) return@withContext target
+        val temporary = File(context.noBackupFilesDir, "reverb-v1.tmp")
+        try {
+            context.assets.open("reverb/model.onnx").use { input ->
+                temporary.outputStream().use { output -> input.copyTo(output) }
+            }
+            check(temporary.length() == 9512223L && hash(temporary) == expectedHash) {
+                "Повреждена встроенная модель Reverb. Установите APK заново поверх приложения."
+            }
+            currentCoroutineContext().ensureActive()
+            check(temporary.renameTo(target)) { "Не удалось установить Reverb" }
+            target
+        } finally { temporary.delete() }
+    }
+
     suspend fun install(context: Context, uris: List<Uri>, progress: (String) -> Unit) = withContext(Dispatchers.IO) {
         require(uris.isNotEmpty()) { "Выберите ZIP или все семь частей" }
         fun displayName(uri: Uri): String = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
@@ -96,3 +127,4 @@ object ModelInstaller {
         }
     }
 }
+
