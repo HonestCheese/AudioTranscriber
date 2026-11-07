@@ -1,0 +1,55 @@
+{
+  "model": "v3_e2e_rnnt",
+  "gigaam_revision": "7447938d791c4f3e643386ee22c33777004293a5",
+  "sample_rate": 16000,
+  "channels": 1,
+  "blank_id": 1024,
+  "max_symbols_per_step": 10,
+  "asr_chunk_seconds": 24,
+  "asr_step_seconds": 23,
+  "asr_audio": "Original",
+  "diarization": {
+    "segmentation": "Reverb v1",
+    "embedding": "3D-Speaker ERes2NetV2",
+    "clustering": "FastClustering",
+    "num_clusters": -1,
+    "threshold": 0.63,
+    "window_shift_ratio": 0.1,
+    "min_duration_on": 0.3,
+    "min_duration_off": 0.5
+  },
+  "denoiser": {
+    "model": "DPDFNet2",
+    "attenuation_limit_db": 12,
+    "compressor": {
+      "threshold_db": -30,
+      "ratio": 2,
+      "max_gain_db": 4,
+      "attack_ms": 10,
+      "release_ms": 150
+    }
+  },
+  "word_alignment": {
+    "method": "temporal_overlap_and_viterbi",
+    "context_utterance_gap_seconds": 0.8,
+    "context_switch_penalty": 0.7,
+    "min_word_overlap": 0.15,
+    "max_pause_seconds": 0.9
+  },
+  "pipeline": "gigaam-v3-reverb-eres2netv2-dpdfnet2",
+  "source_notebook": "AudioTranscriber_Final_ML_Pipeline_v1_fixed.ipynb",
+  "preprocessing_variants": [
+    "Original",
+    "DPDFNet mild",
+    "DPDFNet + gentle compressor"
+  ],
+  "default_diarization_variant": "Original",
+  "wpe_enabled": false,
+  "benchmark_selection_order": [
+    "speaker_count_accuracy_desc",
+    "macro_DER_asc",
+    "macro_JER_asc"
+  ],
+  "sherpa_onnx_version": "2.0.1",
+  "resampling": "polyphase_fir_kaiser_beta_5"
+}
