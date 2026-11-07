@@ -72,7 +72,7 @@ internal object ContextSpeakerResolver {
 
                     val raw = Llama.complete(
                         model,
-                        prompt(words, ids, batch, windowStart, windowEnd),
+                        prompt = prompt(words, ids, batch, windowStart, windowEnd),
                         systemPrompt = "Ты исправляешь только неоднозначные метки говорящих. " +
                             "Акустические оценки важнее смысла. Для каждого целевого слова выбирай " +
                             "только одного из двух предложенных акустических кандидатов; не создавай " +
