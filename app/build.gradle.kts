@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.audiotranscriber"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.7-final-enrollment"
+        versionCode = 8
+        versionName = "1.8-full-offline"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -60,3 +60,19 @@ kotlin {
 }
 
 
+
+// Fail early rather than silently publishing an APK without the required weights.
+val verifyOfflineAssets by tasks.registering {
+    doLast {
+        val assets = project.file("src/main/assets")
+        check(assets.resolve("bundled_model_manifest.json").isFile) {
+            "Run python3 scripts/prepare_offline_assets.py --gigaam-archive /path/to/models.zip first"
+        }
+        listOf("gigaam/v3_e2e_rnnt_encoder.onnx", "gigaam/v3_e2e_rnnt_decoder.onnx",
+            "gigaam/v3_e2e_rnnt_joint.onnx", "diarization/reverb/model.onnx",
+            "diarization/eres2netv2.onnx", "enrollment/titanet-small.onnx").forEach { name ->
+            check(assets.resolve("offline_models/$name").isFile) { "Missing bundled model: $name" }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyOfflineAssets) }

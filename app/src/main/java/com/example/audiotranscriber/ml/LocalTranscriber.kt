@@ -62,7 +62,7 @@ object LocalTranscriber {
             withContext(Dispatchers.Main) { progress(message) }
 
         check(ModelInstaller.isReady(context)) {
-            "Сначала импортируйте архив с тремя моделями GigaAM."
+            "Дождитесь подготовки встроенных моделей."
         }
 
         report("Проверка локальных моделей…")
