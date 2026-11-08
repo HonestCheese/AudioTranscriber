@@ -37,6 +37,9 @@ fun HomeScreen(
     audioVariant: DiarizationAudioVariant,
     onAudioVariantChange: (DiarizationAudioVariant) -> Unit,
     onCancel: () -> Unit,
+    profiles: Map<String, String>,
+    onAddProfile: () -> Unit,
+    onDeleteProfile: (String) -> Unit,
     transcript: SavedTranscript?,
     onSaveNames: (Map<Int, String>) -> Unit,
     onSegmentClick: (Int) -> Unit,
@@ -240,7 +243,7 @@ fun HomeScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Модели не установлены", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Импортируйте архив GigaAM. Reverb и ERes2NetV2, а при необходимости DPDFNet2, загрузятся один раз при первом запуске.",
+                        "Импортируйте архив GigaAM. Reverb и ERes2NetV2 загрузятся один раз при первой обработке.",
                         color = AppTextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -255,47 +258,17 @@ fun HomeScreen(
         }
 
         AppPanel {
-            var variantMenuExpanded by remember { mutableStateOf(false) }
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                AppEyebrow("АУДИО ДЛЯ ДИАРИЗАЦИИ")
-                Box(Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { variantMenuExpanded = true },
-                        enabled = !isProcessing,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(audioVariant.label)
-                            Text("⌄", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = variantMenuExpanded,
-                        onDismissRequest = { variantMenuExpanded = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        DiarizationAudioVariant.values().forEach { variant ->
-                            DropdownMenuItem(
-                                text = { Text(variant.label) },
-                                onClick = {
-                                    onAudioVariantChange(variant)
-                                    variantMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
+            Text("Голосовые профили", style = MaterialTheme.typography.titleMedium)
+            Text("Необязательно: добавьте 2–4 отдельные чистые записи голоса одного человека, каждая от 2.5 секунды. Профили хранятся на телефоне.", color = AppTextMuted,
+                style = MaterialTheme.typography.bodySmall)
+            profiles.forEach { (id, name) ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onDeleteProfile(id) }, enabled = !isProcessing && !isRecording) { Text("Удалить") }
                 }
-                Text(
-                    "GigaAM всегда получает оригинал. Этот вариант влияет только на Reverb + ERes2NetV2.",
-                    color = AppTextMuted,
-                    style = MaterialTheme.typography.bodySmall
-                )
             }
+            OutlinedButton(onClick = onAddProfile, enabled = !isProcessing && !isRecording,
+                modifier = Modifier.fillMaxWidth()) { Text("Добавить голосовой профиль") }
         }
 
         Row(

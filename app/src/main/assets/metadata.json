@@ -30,18 +30,15 @@
     }
   },
   "word_alignment": {
-    "method": "temporal_overlap_and_viterbi",
-    "context_utterance_gap_seconds": 0.8,
-    "context_switch_penalty": 0.7,
+    "method": "raw_temporal_overlap",
     "min_word_overlap": 0.15,
-    "max_pause_seconds": 0.9
+    "max_pause_seconds": 0.9,
+    "viterbi_enabled": false
   },
-  "pipeline": "gigaam-v3-reverb-eres2netv2-dpdfnet2",
-  "source_notebook": "AudioTranscriber_Final_ML_Pipeline_v1_fixed.ipynb",
+  "pipeline": "gigaam-v3-final-raw-titanet",
+  "source_notebook": "AudioTranscriber_Android_ML_Handoff_Final_v1.ipynb",
   "preprocessing_variants": [
-    "Original",
-    "DPDFNet mild",
-    "DPDFNet + gentle compressor"
+    "Original"
   ],
   "default_diarization_variant": "Original",
   "wpe_enabled": false,
@@ -51,5 +48,15 @@
     "macro_JER_asc"
   ],
   "sherpa_onnx_version": "2.0.1",
-  "resampling": "polyphase_fir_kaiser_beta_5"
+  "resampling": "polyphase_fir_kaiser_beta_5",
+  "speaker_enrollment": {
+    "model": "NeMo TitaNet Small",
+    "clip_seconds_min": 2.5,
+    "max_clips": 4,
+    "min_query_turn_seconds": 1.5,
+    "turn_gap_seconds": 0.8,
+    "similarity_threshold": 0.3,
+    "margin": 0.06,
+    "profiles": "independent local voice recordings"
+  }
 }

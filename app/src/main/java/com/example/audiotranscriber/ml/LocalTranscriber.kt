@@ -68,7 +68,7 @@ object LocalTranscriber {
         report("Проверка локальных моделей…")
         ModelInstaller.ensurePipelineModels(
             context = context,
-            includeDenoiser = audioVariant.requiresDenoiser
+            includeDenoiser = false
         ) { message -> report(message) }
 
         val dir = ModelInstaller.directory(context)
@@ -131,12 +131,7 @@ object LocalTranscriber {
 
         report("Подготовка аудио для диаризации · ${audioVariant.label}…")
         val preprocessingStarted = System.nanoTime()
-        val diarizationAudio = when (audioVariant) {
-            DiarizationAudioVariant.ORIGINAL -> audio
-            DiarizationAudioVariant.DPDFNET_MILD -> applyDpdfNet(dir, audio)
-            DiarizationAudioVariant.DPDFNET_COMPRESSOR ->
-                applyGentleCompressor(applyDpdfNet(dir, audio))
-        }
+        val diarizationAudio = audio
         val preprocessingMs = elapsedMs(preprocessingStarted)
 
         report("Reverb v1 + ERes2NetV2 · диаризация…")
@@ -152,14 +147,22 @@ object LocalTranscriber {
         currentCoroutineContext().ensureActive()
         val diarizationMs = elapsedMs(diarizationStarted)
 
-        report("Сопоставление слов и говорящих · Viterbi…")
+        report("Сопоставление слов и говорящих…")
         val mergeStarted = System.nanoTime()
-        val alignment = WordSpeakerAligner.align(
+        val rawAlignment = WordSpeakerAligner.align(
             words = words.map { WordSpeakerAligner.Word(it.text, it.start, it.end) },
             diarizationSegments = diarization.map {
                 WordSpeakerAligner.DiarizationInterval(it.start, it.end, it.speaker)
             }
         )
+        val profiles = TitaNetEnrollment.load(context)
+        val alignment = if (profiles.isEmpty()) rawAlignment else {
+            report("TitaNet · узнавание зарегистрированных голосов…")
+            val model = ModelInstaller.ensureTitaNet(context) { report(it) }
+            TitaNetEnrollment.identify(audio, diarization, rawAlignment, profiles, model) {
+                currentCoroutineContext().ensureActive()
+            }
+        }
         val segments = WordSpeakerAligner.buildUtterances(alignment.words)
         require(segments.isNotEmpty()) {
             "Не удалось сформировать реплики из распознанных слов."
@@ -170,7 +173,7 @@ object LocalTranscriber {
             segments = segments,
             words = alignment.words,
             speakers = alignment.speakers,
-            diarizationAudioVariant = audioVariant.label,
+            diarizationAudioVariant = "Original",
             durationMs = (duration * 1000.0).roundToInt(),
             timings = ProcessingTimings(
                 audioDecodeMs = audioDecodeMs,
@@ -456,3 +459,4 @@ object LocalTranscriber {
         }
     }
 }
+

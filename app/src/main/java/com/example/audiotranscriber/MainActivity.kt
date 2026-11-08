@@ -103,6 +103,26 @@ fun AudioTranscriberApp() {
     var playAfterPendingSeek by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var diarizationAudioVariant by remember { mutableStateOf(DiarizationAudioVariant.ORIGINAL) }
+    var showProfileName by remember { mutableStateOf(false) }
+    var profileName by remember { mutableStateOf("") }
+    val profilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) ml.registerProfile(profileName, uris)
+    }
+    if (showProfileName) {
+        AlertDialog(
+            onDismissRequest = { showProfileName = false },
+            title = { Text("Имя участника") },
+            text = { OutlinedTextField(value = profileName, onValueChange = { profileName = it }, singleLine = true) },
+            confirmButton = { TextButton(enabled = profileName.isNotBlank(), onClick = {
+                showProfileName = false
+                player.pause()
+                isPlaying = false
+                profilePicker.launch(arrayOf("audio/*"))
+            }) { Text("Выбрать 2–4 записи") } },
+            dismissButton = { TextButton(onClick = { showProfileName = false }) { Text("Отмена") } }
+        )
+    }
+
 
     LaunchedEffect(processing.result) {
         processing.result?.let { result ->
@@ -387,6 +407,9 @@ fun AudioTranscriberApp() {
                         audioVariant = diarizationAudioVariant,
                         onAudioVariantChange = { diarizationAudioVariant = it },
                         onCancel = ml::cancel,
+                        profiles = processing.profiles,
+                        onAddProfile = { profileName = ""; showProfileName = true },
+                        onDeleteProfile = ml::deleteProfile,
                         onRecord = {
                             if (isRecording) {
                                 try {

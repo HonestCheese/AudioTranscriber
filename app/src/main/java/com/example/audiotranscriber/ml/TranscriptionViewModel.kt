@@ -23,11 +23,12 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
         val busy: Boolean = false,
         val message: String = "",
         val modelsReady: Boolean = false,
-        val result: SavedTranscript? = null
+        val result: SavedTranscript? = null,
+        val profiles: Map<String, String> = emptyMap()
     )
 
     private val app = application
-    private val mutableState = MutableStateFlow(State(modelsReady = ModelInstaller.isReady(app)))
+    private val mutableState = MutableStateFlow(State(modelsReady = ModelInstaller.isReady(app), profiles = TitaNetEnrollment.load(app).associate { it.id to it.name }))
     val state = mutableState.asStateFlow()
     private var task: Job? = null
 
@@ -45,7 +46,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 }
                 mutableState.value = mutableState.value.copy(
                     modelsReady = true,
-                    message = "GigaAM установлен. Reverb и ERes2NetV2 загрузятся при первой обработке; DPDFNet2 — если выберете его вариант."
+                    message = "GigaAM установлен. Reverb и ERes2NetV2 загрузятся при первой обработке."
                 )
             } catch (error: CancellationException) {
                 mutableState.value = mutableState.value.copy(message = "Установка отменена.")
@@ -81,7 +82,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     mutableState.value = mutableState.value.copy(message = message)
                 }
                 val names = output.speakers.associate { speaker ->
-                    speaker.speakerId to "Участник ${speaker.speakerId + 1}"
+                    speaker.speakerId to (speaker.profileId?.let { mutableState.value.profiles[it] } ?: "Участник ${speaker.speakerId + 1}")
                 } + (output.segments.filter { it.speakerId < 0 }
                     .takeIf { it.isNotEmpty() }?.let { mapOf(-1 to "Не определён") } ?: emptyMap())
 
@@ -94,7 +95,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     segments = output.segments,
                     durationMs = output.durationMs,
                     speakerNames = names,
-                    engine = "gigaam-v3-reverb-eres2netv2-dpdfnet2",
+                    engine = "gigaam-v3-final-raw-titanet",
                     processingTimings = output.timings,
                     speakers = output.speakers,
                     wordAssignments = output.words,
@@ -134,6 +135,30 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    fun registerProfile(name: String, uris: List<Uri>) {
+        if (mutableState.value.busy) return
+        task = viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(busy = true, message = "Создание голосового профиля…")
+            try {
+                TitaNetEnrollment.register(app, name, uris) { message ->
+                    mutableState.value = mutableState.value.copy(message = message)
+                }
+                mutableState.value = mutableState.value.copy(
+                    profiles = TitaNetEnrollment.load(app).associate { it.id to it.name },
+                    message = "Голосовой профиль сохранён"
+                )
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutableState.value = mutableState.value.copy(message = "Ошибка профиля: ${e.message}") }
+            finally { mutableState.value = mutableState.value.copy(busy = false) }
+        }
+    }
+
+    fun deleteProfile(id: String) {
+        if (mutableState.value.busy) return
+        TitaNetEnrollment.delete(app, id)
+        mutableState.value = mutableState.value.copy(profiles = TitaNetEnrollment.load(app).associate { it.id to it.name })
+    }
+
     fun cancel() {
         mutableState.value = mutableState.value.copy(
             message = "Остановка… Ожидаем завершения текущего шага модели."
@@ -145,3 +170,4 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
         mutableState.value = mutableState.value.copy(result = null)
     }
 }
+
