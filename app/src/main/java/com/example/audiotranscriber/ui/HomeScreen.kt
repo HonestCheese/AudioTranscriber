@@ -241,9 +241,9 @@ fun HomeScreen(
         if (!modelsReady) {
             AppPanel {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Модели не установлены", style = MaterialTheme.typography.titleMedium)
+                    Text("Подготовка моделей", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Импортируйте архив GigaAM. Reverb и ERes2NetV2 загрузятся один раз при первой обработке.",
+                        "Все модели входят в APK. При первом запуске они автоматически подготавливаются в хранилище телефона.",
                         color = AppTextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -252,7 +252,7 @@ fun HomeScreen(
                         enabled = !isProcessing && !isRecording,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
-                    ) { Text("Установить модели") }
+                    ) { Text("Подготовить модели") }
                 }
             }
         }
@@ -328,7 +328,7 @@ fun HomeScreen(
         }
 
         Text(
-            "Дополнительные веса загружаются один раз при первом запуске. Аудио и результаты обрабатываются локально и не отправляются на сервер.",
+            "Все модели включены в приложение. Обработка аудио работает полностью локально без интернета.",
             style = MaterialTheme.typography.bodySmall,
             color = AppTextMuted
         )

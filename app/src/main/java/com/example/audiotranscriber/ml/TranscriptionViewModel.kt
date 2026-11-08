@@ -32,12 +32,16 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     val state = mutableState.asStateFlow()
     private var task: Job? = null
 
+    init {
+        if (!mutableState.value.modelsReady) installModels(emptyList())
+    }
+
     fun installModels(uris: List<Uri>) {
         if (mutableState.value.busy) return
         task = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(
                 busy = true,
-                message = "Проверка архива GigaAM…",
+                message = "Подготовка встроенных моделей…",
                 result = null
             )
             try {
@@ -46,7 +50,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                 }
                 mutableState.value = mutableState.value.copy(
                     modelsReady = true,
-                    message = "GigaAM установлен. Reverb и ERes2NetV2 загрузятся при первой обработке."
+                    message = "Все модели подготовлены. Приложение готово к работе без интернета."
                 )
             } catch (error: CancellationException) {
                 mutableState.value = mutableState.value.copy(message = "Установка отменена.")

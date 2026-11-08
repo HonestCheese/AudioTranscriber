@@ -19,3 +19,9 @@ local.properties
 *.aar
 android_models.part*
 *_models.zip
+
+# Embedded weights are packaged locally, not stored in ordinary Git.
+.offline-model-cache/
+app/src/main/assets/offline_models/
+__pycache__/
+*.pyc

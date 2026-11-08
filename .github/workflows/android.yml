@@ -1,10 +1,11 @@
-name: Android build
+name: Complete offline Android APK
 on:
-  push:
-    branches: [develop, ml/android-local-ready]
-  pull_request:
-    branches: [develop]
   workflow_dispatch:
+    inputs:
+      gigaam_bundle_url:
+        description: 'HTTPS download URL for the original exported GigaAM models ZIP'
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -21,8 +22,13 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare and verify all embedded models
+        env:
+          GIGAAM_BUNDLE_URL: ${{ inputs.gigaam_bundle_url }}
+        run: python3 scripts/prepare_offline_assets.py --gigaam-archive "$GIGAAM_BUNDLE_URL"
       - run: chmod +x gradlew && ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: AudioTranscriber-debug
+          name: AudioTranscriber-full-offline
+          compression-level: 0
           path: app/build/outputs/apk/debug/app-debug.apk

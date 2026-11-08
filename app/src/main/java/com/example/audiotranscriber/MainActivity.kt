@@ -403,7 +403,7 @@ fun AudioTranscriberApp() {
                         hasAudio = audioUri != null,
                         isProcessing = processing.busy,
                         modelsReady = processing.modelsReady,
-                        onInstallModels = { modelPicker.launch(arrayOf("*/*")) },
+                        onInstallModels = { ml.installModels(emptyList()) },
                         audioVariant = diarizationAudioVariant,
                         onAudioVariantChange = { diarizationAudioVariant = it },
                         onCancel = ml::cancel,
