@@ -37,7 +37,7 @@ class WordSpeakerAlignerTest {
     }
 
     @Test
-    fun viterbiCanSmoothAnIsolatedAmbiguousWord() {
+    fun finalBaselineKeepsRawOverlapWithoutViterbi() {
         val result = WordSpeakerAligner.align(
             words = listOf(
                 WordSpeakerAligner.Word("мы", 0.05, 0.15),
@@ -55,8 +55,8 @@ class WordSpeakerAlignerTest {
 
         val ambiguous = result.words[2]
         assertEquals(1, ambiguous.speakerRawId)
-        assertEquals(0, ambiguous.speakerContextId)
-        assertNotEquals(ambiguous.speakerRawId, ambiguous.speakerContextId)
+        assertEquals(1, ambiguous.speakerContextId)
+        assertEquals(ambiguous.speakerRawId, ambiguous.speakerContextId)
     }
 
     @Test
@@ -88,3 +88,4 @@ class WordSpeakerAlignerTest {
         index, text, start, end, speaker, speaker, 1f
     )
 }
+

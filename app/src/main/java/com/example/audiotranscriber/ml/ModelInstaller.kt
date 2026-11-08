@@ -156,6 +156,18 @@ object ModelInstaller {
         }
     }
 
+    suspend fun ensureTitaNet(context: Context, progress: suspend (String) -> Unit): File = withContext(Dispatchers.IO) {
+        val file = File(directory(context), "enrollment/titanet-small.onnx")
+        val hash = "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e"
+        if (!isVerifiedFile(file, 40_257_283L, hash)) {
+            downloadFile(
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx",
+                file, 40_257_283L, hash, "TitaNet Small", progress
+            )
+        }
+        file
+    }
+
     private fun isVerifiedFile(file: File, size: Long, sha256: String): Boolean {
         if (!file.isFile || file.length() != size) return false
         val digest = MessageDigest.getInstance("SHA-256")
@@ -415,3 +427,4 @@ object ModelInstaller {
         }
     }
 }
+

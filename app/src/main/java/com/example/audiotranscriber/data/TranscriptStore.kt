@@ -104,6 +104,8 @@ class TranscriptStore(private val context: Context) {
                 JSONObject()
                     .put("speakerId", speaker.speakerId)
                     .put("firstSeenMs", speaker.firstSeenMs)
+                    .put("source", speaker.source)
+                    .put("profileId", speaker.profileId ?: JSONObject.NULL)
             )
         }
         root.put("speakers", speakers)
@@ -119,6 +121,7 @@ class TranscriptStore(private val context: Context) {
                     .put("speakerRawId", word.speakerRawId)
                     .put("speakerContextId", word.speakerContextId)
                     .put("confidence", word.confidence.toDouble())
+                    .put("assignmentSource", word.assignmentSource)
             )
         }
         root.put("words", words)
@@ -185,6 +188,8 @@ class TranscriptStore(private val context: Context) {
                 JSONObject()
                     .put("speaker_id", speakerName(speaker.speakerId))
                     .put("first_seen_ms", speaker.firstSeenMs)
+                    .put("source", speaker.source)
+                    .put("profile_id", speaker.profileId ?: JSONObject.NULL)
             )
         }
 
@@ -198,6 +203,7 @@ class TranscriptStore(private val context: Context) {
                     .put("speaker_id", speakerName(word.speakerContextId))
                     .put("speaker_id_raw", speakerName(word.speakerRawId))
                     .put("speaker_confidence", word.confidence.toDouble())
+                    .put("assignment_source", word.assignmentSource)
             )
         }
 
@@ -218,12 +224,17 @@ class TranscriptStore(private val context: Context) {
             .put("window_shift_ratio", 0.1)
             .put("min_duration_on", 0.3)
             .put("min_duration_off", 0.5)
-            .put("context_switch_penalty", 0.7)
-            .put("context_utterance_gap_seconds", 0.8)
+            .put("viterbi_enabled", !transcript.engine.contains("final-raw-titanet"))
+            .put("audio_variant", transcript.diarizationAudioVariant)
+            .put("assignment_mode", if (transcript.engine.contains("final-raw-titanet")) "Enrollment" else "legacy_context")
+            .put("speaker_enrollment", if (transcript.engine.contains("final-raw-titanet")) "NeMo TitaNet Small" else "not_applied")
+            .put("enrollment_similarity_threshold", 0.30)
+            .put("enrollment_margin", 0.06)
+            .put("speaker_confidence_semantics", "word/diarization temporal-overlap ratio; not calibrated probability")
             .put("min_word_overlap", 0.15)
             .put("max_pause_seconds", 0.9)
             .put("wpe_enabled", false)
-            .put("source_notebook", "AudioTranscriber_Final_ML_Pipeline_v1_fixed.ipynb")
+            .put("source_notebook", "AudioTranscriber_Android_ML_Handoff_Final_v1.ipynb")
             .put(
                 "denoiser",
                 if (transcript.diarizationAudioVariant == "Original") "not_applied" else "DPDFNet2"
@@ -296,7 +307,9 @@ class TranscriptStore(private val context: Context) {
             val speaker = speakerArray.getJSONObject(index)
             SpeakerSummary(
                 speakerId = speaker.getInt("speakerId"),
-                firstSeenMs = speaker.getInt("firstSeenMs")
+                firstSeenMs = speaker.getInt("firstSeenMs"),
+                source = speaker.optString("source", "diarization_cluster"),
+                profileId = if (speaker.isNull("profileId")) null else speaker.optString("profileId").takeIf { it.isNotBlank() }
             )
         }
 
@@ -310,7 +323,8 @@ class TranscriptStore(private val context: Context) {
                 endMs = word.getInt("endMs"),
                 speakerRawId = word.optInt("speakerRawId", -1),
                 speakerContextId = word.optInt("speakerContextId", -1),
-                confidence = word.optDouble("confidence", 0.0).toFloat()
+                confidence = word.optDouble("confidence", 0.0).toFloat(),
+                assignmentSource = word.optString("assignmentSource", if (word.optInt("speakerContextId", -1) < 0) "unknown" else "diarization_cluster")
             )
         }
 
@@ -330,3 +344,4 @@ class TranscriptStore(private val context: Context) {
         )
     }
 }
+

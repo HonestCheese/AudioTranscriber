@@ -3,14 +3,13 @@ package com.example.audiotranscriber.ml
 import com.example.audiotranscriber.model.SpeakerSummary
 import com.example.audiotranscriber.model.TranscriptSegment
 import com.example.audiotranscriber.model.WordSpeakerAssignment
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * Word-to-speaker alignment ported from the final ML notebook:
- * temporal overlap scores followed by conservative Viterbi smoothing.
+ * raw temporal overlap; Viterbi is disabled in the final baseline.
  */
 internal object WordSpeakerAligner {
     data class Word(
@@ -30,8 +29,6 @@ internal object WordSpeakerAligner {
         val speakers: List<SpeakerSummary>
     )
 
-    private const val CONTEXT_UTTERANCE_GAP = 0.8
-    private const val CONTEXT_SWITCH_PENALTY = 0.7
     private const val MIN_WORD_OVERLAP = 0.15
     private const val MAX_PAUSE = 0.9
 
@@ -49,30 +46,6 @@ internal object WordSpeakerAligner {
             MutableWord(index, word, raw, raw, confidence, scores)
         }.toMutableList()
 
-        for (group in splitWordGroups(enriched)) {
-            val run = mutableListOf<MutableWord>()
-
-            fun flush() {
-                if (run.isEmpty()) return
-                val smoothed = viterbiGroup(run)
-                run.forEachIndexed { localIndex, word ->
-                    word.speakerContext = smoothed[localIndex]
-                }
-                run.clear()
-            }
-
-            for (index in group) {
-                val word = enriched[index]
-                if (word.scores.isNotEmpty()) {
-                    run += word
-                } else {
-                    flush()
-                    word.speakerContext = -1
-                }
-            }
-            flush()
-        }
-
         val assignments = enriched.map { word ->
             WordSpeakerAssignment(
                 index = word.index,
@@ -81,7 +54,8 @@ internal object WordSpeakerAligner {
                 endMs = (word.word.end * 1000.0).roundToInt(),
                 speakerRawId = word.speakerRaw,
                 speakerContextId = word.speakerContext,
-                confidence = word.confidence.toFloat()
+                confidence = word.confidence.toFloat(),
+                assignmentSource = if (word.speakerRaw < 0) "unknown" else "diarization_cluster"
             )
         }
 
@@ -94,7 +68,16 @@ internal object WordSpeakerAligner {
             }
             .sortedBy { it.firstSeenMs }
 
-        return Result(assignments, speakers)
+        val ids = assignments.map { it.speakerRawId }.filter { it >= 0 }.distinct()
+            .withIndex().associate { it.value to it.index }
+        val finalWords = assignments.map { it.copy(
+            speakerRawId = ids[it.speakerRawId] ?: -1,
+            speakerContextId = ids[it.speakerRawId] ?: -1
+        ) }
+        val finalSpeakers = ids.map { (_, id) ->
+            SpeakerSummary(id, finalWords.first { it.speakerRawId == id }.startMs)
+        }
+        return Result(finalWords, finalSpeakers)
     }
 
     fun buildUtterances(words: List<WordSpeakerAssignment>): List<TranscriptSegment> {
@@ -175,79 +158,4 @@ internal object WordSpeakerAligner {
         return overlap.mapValues { (_, amount) -> min(1.0, amount / duration) }
     }
 
-    private fun splitWordGroups(words: List<MutableWord>): List<List<Int>> {
-        val groups = mutableListOf<List<Int>>()
-        var current = mutableListOf<Int>()
-        for (index in words.indices) {
-            if (current.isNotEmpty()) {
-                val previous = words[current.last()].word
-                val next = words[index].word
-                val gap = next.start - previous.end
-                val sentenceEnd = previous.text.trim().lastOrNull()?.let { it in setOf('.', '!', '?', '…') } == true
-                if (gap > CONTEXT_UTTERANCE_GAP || sentenceEnd) {
-                    groups += current
-                    current = mutableListOf()
-                }
-            }
-            current += index
-        }
-        if (current.isNotEmpty()) groups += current
-        return groups
-    }
-
-    private fun viterbiGroup(words: List<MutableWord>): List<Int> {
-        val states = words.flatMap { it.scores.keys }.distinct().sorted()
-        if (states.isEmpty()) return List(words.size) { -1 }
-
-        val n = words.size
-        val k = states.size
-        val dp = Array(n) { DoubleArray(k) { Double.NEGATIVE_INFINITY } }
-        val back = Array(n) { IntArray(k) }
-
-        for (stateIndex in 0 until k) {
-            val total = words[0].scores.values.sum()
-            val probability = if (total > 0.0) {
-                (words[0].scores[states[stateIndex]] ?: 0.0) / total
-            } else 0.0
-            dp[0][stateIndex] = ln(max(probability, 1e-8))
-        }
-
-        for (t in 1 until n) {
-            val total = words[t].scores.values.sum()
-            for (stateIndex in 0 until k) {
-                val probability = if (total > 0.0) {
-                    (words[t].scores[states[stateIndex]] ?: 0.0) / total
-                } else 0.0
-                val emission = ln(max(probability, 1e-8))
-                var bestPrevious = 0
-                var bestScore = Double.NEGATIVE_INFINITY
-                for (previousIndex in 0 until k) {
-                    val transition = if (previousIndex == stateIndex) 0.0 else -CONTEXT_SWITCH_PENALTY
-                    val candidate = dp[t - 1][previousIndex] + transition
-                    if (candidate > bestScore) {
-                        bestScore = candidate
-                        bestPrevious = previousIndex
-                    }
-                }
-                dp[t][stateIndex] = bestScore + emission
-                back[t][stateIndex] = bestPrevious
-            }
-        }
-
-        var state = (0 until k).maxByOrNull { dp[n - 1][it] } ?: 0
-        val path = IntArray(n)
-        path[n - 1] = state
-        for (t in n - 1 downTo 1) {
-            state = back[t][state]
-            path[t - 1] = state
-        }
-
-        return words.mapIndexed { index, word ->
-            if ((word.scores[states[path[index]]] ?: 0.0) < MIN_WORD_OVERLAP) {
-                -1
-            } else {
-                states[path[index]]
-            }
-        }
-    }
 }
